@@ -1,0 +1,12 @@
+# Dossiers de compilation, recréés par dotnet publish
+bin/
+obj/
+publication/
+
+# Programmes embarqués (yt-dlp, ffmpeg, Deno, spotDL). Ils ne sont pas dans le dépôt :
+# preparer-charge.ps1 les télécharge depuis leurs dépôts officiels et contrôle leurs empreintes.
+Charge/fichiers/
+
+# Réglages propres à un poste
+*.user
+.vs/

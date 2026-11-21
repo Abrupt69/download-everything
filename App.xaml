@@ -1,0 +1,8 @@
+<!-- ThemeMode="Dark" applique le thème Fluent sombre de Windows 11 (barre de titre, listes, barres de défilement).
+     Le mode sombre est voulu en permanence, quel que soit le réglage du PC. -->
+<Application x:Class="YtDlpInterface.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ThemeMode="Dark"
+             StartupUri="FenetrePrincipale.xaml">
+</Application>

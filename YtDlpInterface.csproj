@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>YtDlpInterface</RootNamespace>
+    <AssemblyName>DownloadEverything</AssemblyName>
+    <Version>1.0.0</Version>
+    <Product>Download Everything</Product>
+    <AssemblyTitle>Download Everything</AssemblyTitle>
+    <Description>Interface graphique pour yt-dlp, avec ffmpeg et Deno embarqués</Description>
+    <ApplicationIcon>icone.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Le thème Fluent de Windows 11 (ThemeMode) est encore marqué expérimental dans .NET 10. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
+  </PropertyGroup>
+
+  <!-- Un seul fichier .exe autonome. Le poste de destination n'a pas besoin
+       d'avoir .NET installé, tout est embarqué et compressé dans l'exécutable. -->
+  <PropertyGroup>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType>
+    <!-- Seuls les messages système en français sont gardés, les autres langues alourdissent l'exécutable. -->
+    <SatelliteResourceLanguages>fr</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Les programmes embarqués (yt-dlp, ffmpeg, Deno) voyagent dans un assemblage à part, voir Charge\Charge.csproj. -->
+    <ProjectReference Include="Charge\Charge.csproj" />
+    <!-- Le sous-dossier Charge est un projet à lui seul, ses fichiers ne font pas partie de celui-ci. -->
+    <Compile Remove="Charge\**" />
+    <EmbeddedResource Remove="Charge\**" />
+    <None Remove="Charge\**" />
+    <Page Remove="Charge\**" />
+  </ItemGroup>
+
+</Project>
