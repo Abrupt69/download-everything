@@ -70,8 +70,8 @@ internal static class YtDlp
 
     // Égaliseur. Chaque réglage est une chaîne de filtres de ffmpeg, dont l'effet a été mesuré sur un bruit de
     // test (basses +6 dB, aigus +5 dB, voix +3 dB autour de 2 500 Hz). Un limiteur ferme les réglages qui
-    // renforcent une bande, pour qu'un passage fort ne sature pas. « Volume égalisé » ne touche pas au timbre :
-    // il ramène tous les morceaux au même niveau sonore, utile pour une playlist venue de sources diverses.
+    // renforcent une bande, pour qu'un passage fort ne sature pas. Ramener tous les morceaux au même niveau
+    // n'est plus un réglage de cette liste : c'est un interrupteur à part, voir NiveauSonore.
     public static readonly Choix[] Egaliseurs =
     [
         new("Aucun", ""),
@@ -79,8 +79,10 @@ internal static class YtDlp
         new("Aigus renforcés", "treble=g=5:f=8000,alimiter=limit=0.95"),
         new("Basses et aigus", "bass=g=5:f=100,treble=g=4:f=8000,alimiter=limit=0.95"),
         new("Voix en avant", "equalizer=f=2500:t=q:w=1:g=4,bass=g=-2:f=100,alimiter=limit=0.95"),
-        new("Volume égalisé", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000"),
     ];
+
+    /// <summary>Le nom de l'ancien réglage de l'égaliseur que l'interrupteur du niveau remplace. Qui l'avait choisi retrouve l'interrupteur allumé.</summary>
+    public const string AncienVolumeEgalise = "Volume égalisé";
 
     /// <summary>
     /// Les arguments qui disent à yt-dlp sous quelle forme rendre le son, une fois « -x » demandé.

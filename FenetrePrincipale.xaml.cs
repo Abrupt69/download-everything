@@ -25,6 +25,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Shell;
 using System.Windows.Threading;
 #endif
@@ -163,6 +164,11 @@ public partial class FenetrePrincipale : Window
         MontrerLeDossier(Reglages.LireDossier());
         ChoixQualite.ItemsSource = YtDlp.Qualites;
         ChoixQualite.SelectedIndex = 0;
+        ChoixFormat.SelectionChanged += (_, _) =>
+        {
+            RetenirLeFormat();
+            AdapterLeNiveau();
+        };
         AdapterLesListes();
 
         // Les deux options, relues telles que laissées la dernière fois, et notées dès qu'on les change.
@@ -178,6 +184,9 @@ public partial class FenetrePrincipale : Window
         var egaliseurNote = Reglages.Lire("egaliseur", "");
         ChoixEgaliseur.SelectedItem = YtDlp.Egaliseurs.FirstOrDefault(e => e.Libelle == egaliseurNote) ?? YtDlp.Egaliseurs[0];
         ChoixEgaliseur.SelectionChanged += (_, _) => Reglages.Ecrire("egaliseur", (ChoixEgaliseur.SelectedItem as Choix)?.Libelle ?? "");
+        // L'interrupteur du niveau égalisé, noté à chaque téléchargement. Qui avait choisi l'ancien réglage
+        // « Volume égalisé » de l'égaliseur, que l'interrupteur remplace, le retrouve allumé.
+        ChoixNiveau.IsChecked = Reglages.Lire("niveau", egaliseurNote == YtDlp.AncienVolumeEgalise ? "oui" : "non") == "oui";
         AdapterLesListes();
 
         Loaded += async (_, _) =>
@@ -308,31 +317,88 @@ public partial class FenetrePrincipale : Window
 
     // ───────────────────────────── Listes de choix ─────────────────────────────
 
-    private void ChangerDeContenu(object sender, RoutedEventArgs e) => AdapterLesListes();
+    // La vue de téléchargement choisie, audio ou vidéo. L'application s'ouvre sur l'audio. La valeur reste
+    // quand on passe sur les torrents, pour savoir où revenir et quoi faire d'une adresse ordinaire.
+    private bool _audio = true;
+
+    // Le format choisi dans chaque vue, retrouvé quand on y revient.
+    private int _formatAudio, _formatVideo;
+
+    /// <summary>Retient le format choisi, dans la vue où il l'a été.</summary>
+    private void RetenirLeFormat()
+    {
+        if (ChoixFormat.SelectedIndex < 0) return;
+        if (ReferenceEquals(ChoixFormat.ItemsSource, YtDlp.FormatsAudio)) _formatAudio = ChoixFormat.SelectedIndex;
+        else if (ReferenceEquals(ChoixFormat.ItemsSource, YtDlp.FormatsVideo)) _formatVideo = ChoixFormat.SelectedIndex;
+    }
 
     /// <summary>
-    /// Remplit la liste des formats selon le contenu choisi. Sans ffmpeg aucune conversion n'est possible,
-    /// la liste ne propose alors que le format d'origine du site.
+    /// Met les réglages à l'image de la vue, audio ou vidéo : ses formats, et sa qualité à elle. Chaque vue ne
+    /// montre que ce qui la concerne. Sans ffmpeg aucune conversion n'est possible, la liste ne propose alors
+    /// que le format d'origine du site.
     /// </summary>
     private void AdapterLesListes()
     {
         // Les touches préviennent dès la lecture du XAML, avant que les listes existent.
         if (ChoixFormat is null || ChoixQualite is null) return;
 
-        var audio = ChoixAudio.IsChecked == true;
+        var audio = _audio;
         var avecFfmpeg = _complements.Ffmpeg is not null;
         Choix[] formats = !avecFfmpeg ? [YtDlp.FormatDOrigine] : audio ? YtDlp.FormatsAudio : YtDlp.FormatsVideo;
 
         if (!ReferenceEquals(ChoixFormat.ItemsSource, formats))
         {
             ChoixFormat.ItemsSource = formats;
-            ChoixFormat.SelectedIndex = 0;
+            ChoixFormat.SelectedIndex = Math.Clamp(audio ? _formatAudio : _formatVideo, 0, formats.Length - 1);
         }
         ChoixFormat.IsEnabled = avecFfmpeg;
-        ChoixQualite.IsEnabled = !audio;
-        // Qualité du son et égaliseur ne concernent que le son seul, et demandent ffmpeg.
-        if (ChoixQualiteSon is not null) ChoixQualiteSon.IsEnabled = audio && avecFfmpeg;
-        if (ChoixEgaliseur is not null) ChoixEgaliseur.IsEnabled = audio && avecFfmpeg;
+        // La définition de l'image pour la vidéo. Le débit du son et l'égaliseur pour l'audio, qui demandent ffmpeg.
+        ChoixQualite.Visibility = audio ? Visibility.Collapsed : Visibility.Visible;
+        if (ChoixQualiteSon is not null)
+        {
+            ChoixQualiteSon.Visibility = audio ? Visibility.Visible : Visibility.Collapsed;
+            ChoixQualiteSon.IsEnabled = avecFfmpeg;
+        }
+        if (ChoixEgaliseur is not null) ChoixEgaliseur.IsEnabled = avecFfmpeg;
+        if (LigneEgaliseur is not null) Derouler(LigneEgaliseur, audio);
+        AdapterLeNiveau();
+    }
+
+    // Le niveau égalisé, tel que choisi au clic sur Télécharger et gardé pour tout le travail, avec le format des morceaux.
+    private bool _niveau;
+    private string _formatDuNiveau = "";
+
+    /// <summary>L'interrupteur du niveau ne s'offre que pour un format qu'on sait égaliser sans perte, et avec ffmpeg pour mesurer.</summary>
+    private void AdapterLeNiveau()
+    {
+        if (ChoixNiveau is null || ChoixFormat is null) return;
+        ChoixNiveau.IsEnabled = _complements.Ffmpeg is not null
+                                && NiveauSonore.PrendEnCharge((ChoixFormat.SelectedItem as Choix)?.Valeur ?? "");
+    }
+
+    /// <summary>
+    /// Égalise le niveau d'un morceau qui vient d'arriver, et dit au journal ce qui a été fait. Un échec laisse
+    /// le fichier tel qu'il est arrivé : mieux vaut un morceau au niveau d'origine qu'un morceau abîmé.
+    /// </summary>
+    /// <param name="rang">Le rang du morceau dans la liste, pour sa ligne de journal. Null pour un téléchargement seul.</param>
+    /// <param name="suivre">Reçoit le ffmpeg en marche, pour qu'Annuler l'arrête avec le reste.</param>
+    private async Task EgaliserLeNiveauAsync(string fichier, int? rang, Action<Process?> suivre)
+    {
+        if (_complements.Ffmpeg is not { } ffmpeg) return;
+        string ligne;
+        try
+        {
+            if (await NiveauSonore.EgaliserAsync(ffmpeg, fichier, _formatDuNiveau, suivre) is not { } bilan) return;
+            ligne = $"Niveau sonore, {bilan}";
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or Win32Exception or InvalidOperationException)
+        {
+            ligne = $"Niveau sonore non égalisé, le fichier reste tel quel. {e.Message}";
+        }
+        // Annulé pendant la mesure : ffmpeg a été arrêté, il n'y a rien à en dire.
+        if (_annulationDemandee) return;
+        if (rang is { } numero) Ecrire(ligne, numero);
+        else Ecrire(ligne);
     }
 
     // ───────────────────────────── Petites actions ─────────────────────────────
@@ -506,7 +572,7 @@ public partial class FenetrePrincipale : Window
     private void BasculerLeJournal(object sender, RoutedEventArgs e)
     {
         var ouvert = BasculeJournal.IsChecked == true;
-        Journal.Visibility = ouvert ? Visibility.Visible : Visibility.Collapsed;
+        Derouler(Journal, ouvert);
         BasculeJournal.Content = ouvert ? "Masquer le _journal" : "Afficher le _journal";
         if (!ouvert) return;
         Journal.ScrollToEnd();
@@ -516,10 +582,126 @@ public partial class FenetrePrincipale : Window
     private void BasculerLesElements(object sender, RoutedEventArgs e)
     {
         var ouvert = BasculeElements.IsChecked == true;
-        CadreElements.Visibility = ouvert ? Visibility.Visible : Visibility.Collapsed;
+        Derouler(CadreElements, ouvert);
         BasculeElements.Content = ouvert ? "Masquer le _détail" : "Afficher le _détail";
         if (ouvert) GarderLaFenetreALEcran();
     }
+
+    // ───────────────────────────── Mouvements ─────────────────────────────
+
+#if PORTABLE
+    /// <summary>Sous Linux, pas encore de mouvement : l'élément se montre ou se cache d'un coup.</summary>
+    private static void Derouler(Control element, bool montrer) =>
+        element.Visibility = montrer ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>Sous Linux, pas encore de mouvement à l'entrée d'une vue.</summary>
+    private static void FaireEntrer(Control vue)
+    {
+    }
+#else
+    // Les mouvements sont courts : ils accompagnent le geste, ils ne font pas attendre.
+    private static readonly Duration DureeDuMouvement = TimeSpan.FromMilliseconds(190);
+    private static readonly IEasingFunction Amorti = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+    // Les éléments en train de se déplier ou de se replier : vers quoi ils vont, et ce que le dessin leur fixait
+    // (hauteur, hauteur minimale, découpe), à leur rendre une fois le mouvement fini.
+    private readonly Dictionary<FrameworkElement, (bool Montrer, object Hauteur, object HauteurMin, bool Decoupe)> _plis = [];
+
+    private bool MouvementsPermis => IsLoaded && SystemParameters.ClientAreaAnimation;
+
+    private static void Rendre(FrameworkElement element, DependencyProperty propriete, object valeur)
+    {
+        if (valeur == DependencyProperty.UnsetValue) element.ClearValue(propriete);
+        else element.SetValue(propriete, valeur);
+    }
+
+    /// <summary>
+    /// Montre ou cache un élément en le déroulant : sa hauteur s'ouvre ou se referme, son contenu apparaît ou
+    /// s'efface. La fenêtre, qui épouse son contenu, suit le mouvement. Une demande contraire en cours de route
+    /// repart de là où l'élément en est.
+    /// </summary>
+    private void Derouler(FrameworkElement element, bool montrer)
+    {
+        var enRoute = _plis.TryGetValue(element, out var pli);
+        if ((enRoute ? pli.Montrer : element.Visibility == Visibility.Visible) == montrer) return;
+
+        // Fenêtre pas encore à l'écran, ou animations coupées dans les réglages de Windows : pas de mouvement.
+        if (!enRoute && !MouvementsPermis)
+        {
+            element.Visibility = montrer ? Visibility.Visible : Visibility.Collapsed;
+            return;
+        }
+
+        if (!enRoute)
+            pli = (montrer, element.ReadLocalValue(HeightProperty), element.ReadLocalValue(MinHeightProperty), element.ClipToBounds);
+        _plis[element] = pli = (montrer, pli.Hauteur, pli.HauteurMin, pli.Decoupe);
+        element.ClipToBounds = true;
+
+        if (!montrer)
+        {
+            element.MinHeight = 0;
+            Animer(element, element.ActualHeight, 0, montrer: false, fondreDepuisLeDebut: !enRoute);
+            return;
+        }
+
+        if (!enRoute)
+        {
+            // Présent mais fermé et invisible, le temps que ce qui l'a fait apparaître finisse de le remplir.
+            element.MinHeight = 0;
+            element.Height = 0;
+            element.Opacity = 0;
+            element.Visibility = Visibility.Visible;
+        }
+        var depart = enRoute ? element.ActualHeight : 0;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            // Un contre-ordre est arrivé entre-temps.
+            if (!_plis.TryGetValue(element, out var courant) || !courant.Montrer) return;
+            // La hauteur d'arrivée est celle que l'élément prend de lui-même, mesurée sans la contrainte du mouvement.
+            element.BeginAnimation(HeightProperty, null);
+            Rendre(element, HeightProperty, courant.Hauteur);
+            Rendre(element, MinHeightProperty, courant.HauteurMin);
+            var largeur = (VisualTreeHelper.GetParent(element) as FrameworkElement)?.ActualWidth ?? ActualWidth;
+            element.Measure(new Size(largeur, double.PositiveInfinity));
+            var arrivee = Math.Max(0, element.DesiredSize.Height - element.Margin.Top - element.Margin.Bottom);
+            element.MinHeight = 0;
+            Animer(element, depart, arrivee, montrer: true, fondreDepuisLeDebut: !enRoute);
+        });
+    }
+
+    private void Animer(FrameworkElement element, double depart, double arrivee, bool montrer, bool fondreDepuisLeDebut)
+    {
+        var hauteur = new DoubleAnimation(depart, arrivee, DureeDuMouvement) { EasingFunction = Amorti };
+        hauteur.Completed += (_, _) =>
+        {
+            // Une demande contraire a pris le relais, c'est elle qui finira le travail.
+            if (!_plis.TryGetValue(element, out var dernier) || dernier.Montrer != montrer) return;
+            _plis.Remove(element);
+            if (!montrer) element.Visibility = Visibility.Collapsed;
+            element.BeginAnimation(HeightProperty, null);
+            element.BeginAnimation(OpacityProperty, null);
+            Rendre(element, HeightProperty, dernier.Hauteur);
+            Rendre(element, MinHeightProperty, dernier.HauteurMin);
+            element.ClipToBounds = dernier.Decoupe;
+            element.Opacity = 1;
+            if (montrer) GarderLaFenetreALEcran();
+        };
+        var fondu = new DoubleAnimation(montrer ? 1 : 0, DureeDuMouvement);
+        if (fondreDepuisLeDebut) fondu.From = montrer ? 0 : 1;
+        element.BeginAnimation(HeightProperty, hauteur);
+        element.BeginAnimation(OpacityProperty, fondu);
+    }
+
+    /// <summary>Une vue qui arrive à l'écran : elle monte de quelques points en apparaissant.</summary>
+    private void FaireEntrer(FrameworkElement vue)
+    {
+        if (!MouvementsPermis) return;
+        var glissement = new TranslateTransform(0, 10);
+        vue.RenderTransform = glissement;
+        glissement.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(10, 0, DureeDuMouvement) { EasingFunction = Amorti });
+        vue.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, DureeDuMouvement));
+    }
+#endif
 
 #if PORTABLE
     /// <summary>Sous Linux c'est le gestionnaire de fenêtres qui garde la fenêtre à l'écran, il n'y a rien à faire.</summary>
@@ -720,7 +902,11 @@ public partial class FenetrePrincipale : Window
             _dossierDeLaListe = dossier;
             BoutonReprendre.Visibility = Visibility.Collapsed;
             _qualiteDuSon = (ChoixQualiteSon.SelectedItem as Choix)?.Valeur ?? "0";
-            _egaliseur = ChoixEgaliseur.IsEnabled ? (ChoixEgaliseur.SelectedItem as Choix)?.Valeur ?? "" : "";
+            _egaliseur = _audio && ChoixEgaliseur.IsEnabled ? (ChoixEgaliseur.SelectedItem as Choix)?.Valeur ?? "" : "";
+            // Le niveau égalisé ne vaut que pour le son, dans un format qu'on sait égaliser sans perte.
+            _formatDuNiveau = (ChoixFormat.SelectedItem as Choix)?.Valeur ?? "";
+            _niveau = _audio && ChoixNiveau.IsEnabled && ChoixNiveau.IsChecked == true;
+            Reglages.Ecrire("niveau", ChoixNiveau.IsChecked == true ? "oui" : "non");
 
             // Les torrents ont leur propre vue et leur propre outil. Ils y partent tout de suite, et la vue de
             // téléchargement reste libre : un torrent dure, on ne bloque pas le reste en l'attendant.
@@ -732,8 +918,8 @@ public partial class FenetrePrincipale : Window
                 var vue = OuvrirLesTorrents();
                 foreach (var torrent in torrents) await vue.AjouterAsync(torrent, dossier);
                 if (autres.Count == 0) return;
-                // Des adresses ordinaires étaient collées avec : retour à la vue de téléchargement pour elles.
-                ChoixVueTelechargement.IsChecked = true;
+                // Des adresses ordinaires étaient collées avec : retour à la vue d'où l'on venait, audio ou vidéo, pour elles.
+                (_audio ? ChoixAudio : ChoixVideo).IsChecked = true;
                 // Des adresses ordinaires étaient collées avec. Elles suivent ici, par le chemin habituel.
                 adresses = autres;
                 adresse = autres[0];
@@ -775,7 +961,7 @@ public partial class FenetrePrincipale : Window
                 return;
             }
 
-            var audioSeul = ChoixAudio.IsChecked == true;
+            var audioSeul = _audio;
             var format = (ChoixFormat.SelectedItem as Choix)?.Valeur ?? "";
             var qualite = (ChoixQualite.SelectedItem as Choix)?.Valeur ?? "";
 
@@ -846,6 +1032,17 @@ public partial class FenetrePrincipale : Window
             }
             else if (fichiers.Count > 0)
             {
+                // Niveau égalisé, pour ce qui vient d'arriver. Un fichier déjà présent a été traité à son arrivée.
+                if (_niveau && !_dejaPresent)
+                {
+                    Etat("Mesure du niveau sonore…");
+                    foreach (var recu in fichiers)
+                    {
+                        if (_annulationDemandee) break;
+                        await EgaliserLeNiveauAsync(recu, null, processus => _enCours = processus);
+                    }
+                    Etat("");
+                }
                 // La barre finit pleine et verte, le nom du fichier remplace les chiffres.
                 if (code == 0) MarquerLElementCourant("terminé");
                 BarreProgression.IsIndeterminate = false;
@@ -856,7 +1053,7 @@ public partial class FenetrePrincipale : Window
                 var nom = Path.GetFileName(_dernierFichier);
                 NomFichier.Text = fichiers.Count == 1 ? nom : $"{fichiers.Count} fichiers, le dernier est {nom}";
                 NomFichier.ToolTip = _dernierFichier;
-                Resultat.Visibility = Visibility.Visible;
+                Derouler(Resultat, true);
                 // Dans une playlist, quelques vidéos peuvent manquer (privées, retirées) sans que le reste soit perdu.
                 if (code == 0 && _dejaPresent && fichiers.Count == 1)
                 {
@@ -1467,6 +1664,15 @@ public partial class FenetrePrincipale : Window
                     }
                 }
 
+                // Niveau égalisé : le morceau vient d'arriver, il est mesuré puis ramené vers le niveau des morceaux de club.
+                // C'est fait avant de rendre la place dans la file, pour qu'une annulation arrête aussi cette étape.
+                if (fichier is not null && _niveau && !travail.DejaLa && !_annulationDemandee)
+                {
+                    travail.Element.Etat = "niveau";
+                    Montrer();
+                    await EgaliserLeNiveauAsync(fichier, travail.Element.Numero, processus => travail.Processus = processus);
+                }
+
                 YtDlp.EffacerLaTrace(suivi);
                 _actifs.Remove(travail);
                 travail.Recu = travail.Total = travail.Debit = 0;
@@ -1735,7 +1941,7 @@ public partial class FenetrePrincipale : Window
             var nom = Path.GetFileName(_dernierFichier);
             NomFichier.Text = fichiers.Count == 1 ? nom : $"{fichiers.Count} fichiers, le dernier est {nom}";
             NomFichier.ToolTip = _dernierFichier;
-            Resultat.Visibility = Visibility.Visible;
+            Derouler(Resultat, true);
         }
         MesureDebit.Text = "—";
 
@@ -1956,7 +2162,7 @@ public partial class FenetrePrincipale : Window
         var nom = Path.GetFileName(_dernierFichier);
         NomFichier.Text = recus.Count == 1 ? nom : $"{recus.Count} fichiers, le dernier est {nom}";
         NomFichier.ToolTip = _dernierFichier;
-        Resultat.Visibility = Visibility.Visible;
+        Derouler(Resultat, true);
         MarquerLElementCourant("terminé");
 
         // Le sous-dossier seul, au nom du site puis de la galerie. Le chemin complet tiendrait sur deux lignes.
@@ -2026,7 +2232,7 @@ public partial class FenetrePrincipale : Window
             _dernierFichier = fichier;
             NomFichier.Text = Path.GetFileName(fichier);
             NomFichier.ToolTip = fichier;
-            Resultat.Visibility = Visibility.Visible;
+            Derouler(Resultat, true);
             Terminer("TERMINÉ", "Ce n'était ni une vidéo ni une image : le fichier a été téléchargé tel quel.", Ton.Reussite);
             return true;
         }
@@ -2058,14 +2264,23 @@ public partial class FenetrePrincipale : Window
     private VueTorrents? _vueTorrents;
 
     /// <summary>
-    /// Les deux touches de la plaque, « Téléchargement » et « Torrents », montrent l'une ou l'autre vue dans la
-    /// même fenêtre. Les torrents continuent d'avancer quand leur vue est cachée.
+    /// Les trois touches de la plaque, « Audio », « Vidéo » et « Torrents », changent la vue dans la même fenêtre.
+    /// Audio et vidéo partagent les mêmes rangées, chacune avec ses réglages. Les torrents ont leur propre vue,
+    /// et continuent d'avancer quand elle est cachée.
     /// </summary>
     private void ChangerDeVue(object sender, RoutedEventArgs e)
     {
         // Les touches préviennent dès la lecture du dessin, avant que le reste existe.
-        if (VueTelechargement is null || ZoneTorrents is null || ChoixVueTorrents is null || BasculeCle is null) return;
+        if (VueTelechargement is null || ZoneTorrents is null || ChoixVueTorrents is null || BasculeCle is null
+            || ChoixAudio is null || ChoixVideo is null) return;
         var torrents = ChoixVueTorrents.IsChecked == true;
+        // Entre deux touches il y a un instant où aucune n'est enfoncée (Avalonia prévient aussi de celle qu'on quitte).
+        if (!torrents && ChoixAudio.IsChecked != true && ChoixVideo.IsChecked != true) return;
+        if (!torrents)
+        {
+            _audio = ChoixAudio.IsChecked == true;
+            AdapterLesListes();
+        }
         if (torrents && _vueTorrents is null)
         {
 #if PORTABLE
@@ -2077,10 +2292,23 @@ public partial class FenetrePrincipale : Window
             _vueTorrents.EnCoursChange += nombre => ChoixVueTorrents.Content = nombre > 0 ? $"Torrents ({nombre})" : "Torrents";
             ZoneTorrents.Child = _vueTorrents;
         }
+        var torrentsAvant = ZoneTorrents.Visibility == Visibility.Visible;
         VueTelechargement.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
         ZoneTorrents.Visibility = torrents ? Visibility.Visible : Visibility.Collapsed;
         // Le compte Spotify et le journal appartiennent à la vue de téléchargement.
         BasculeCle.Visibility = BasculeJournal.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
+        if (torrents != torrentsAvant)
+        {
+            // On entre dans les torrents ou on en sort : toute la vue qui arrive monte de quelques points en apparaissant.
+            FaireEntrer(torrents ? ZoneTorrents : VueTelechargement);
+        }
+        else if (!torrents)
+        {
+            // D'audio à vidéo, les rangées communes ne bougent pas. Seules les deux listes qui changent se renouvellent,
+            // pendant que la rangée de l'égaliseur se déroule ou se replie.
+            FaireEntrer(ChoixFormat);
+            FaireEntrer(_audio ? ChoixQualiteSon : ChoixQualite);
+        }
         GarderLaFenetreALEcran();
     }
 
@@ -2348,7 +2576,7 @@ public partial class FenetrePrincipale : Window
     /// </summary>
     private async Task TelechargerPlusieursAsync(string executable, List<string> adresses, string dossier)
     {
-        var audioSeul = ChoixAudio.IsChecked == true;
+        var audioSeul = _audio;
         var format = (ChoixFormat.SelectedItem as Choix)?.Valeur ?? "";
         var qualite = (ChoixQualite.SelectedItem as Choix)?.Valeur ?? "";
         Ecrire("");
@@ -2437,7 +2665,7 @@ public partial class FenetrePrincipale : Window
     private void BasculerLaCle(object sender, RoutedEventArgs e)
     {
         var ouvert = BasculeCle.IsChecked == true;
-        ZoneCle.Visibility = ouvert ? Visibility.Visible : Visibility.Collapsed;
+        Derouler(ZoneCle, ouvert);
         if (!ouvert) return;
         ChampRetourSpotify.Text = CompteSpotify.AdresseDeRetour;
         if ((ChampIdSpotify.Text ?? "").Length == 0) ChampIdSpotify.Text = CompteSpotify.IdClient;
@@ -2628,10 +2856,10 @@ public partial class FenetrePrincipale : Window
 
         // Un lien de plateforme de musique ne donne que du son, quel que soit le choix Vidéo ou Audio.
         var source = LiensDeMusique.Plateforme(adresse) ?? "Spotify";
-        var format = ChoixAudio.IsChecked == true ? (ChoixFormat.SelectedItem as Choix)?.Valeur ?? "mp3" : "mp3";
+        var format = _audio ? (ChoixFormat.SelectedItem as Choix)?.Valeur ?? "mp3" : "mp3";
         Ecrire("");
         Ecrire($"Lecture du lien {source} {adresse}");
-        if (ChoixAudio.IsChecked != true) Ecrire($"Un lien {source} ne donne que du son, les fichiers seront en MP3.");
+        if (!_audio) Ecrire($"Un lien {source} ne donne que du son, les fichiers seront en MP3.");
 
         // Premier temps, la description des morceaux. La source la plus rapide d'abord, la page publique de Spotify.
         Etat($"Lecture du lien {source}…", annoncer: true);
@@ -3071,10 +3299,8 @@ public partial class FenetrePrincipale : Window
 
     private void MontrerOuCacherLaZone() =>
         // « ?? "" » : sous Avalonia un texte jamais rempli vaut null, là où WPF rend une chaîne vide.
-        ZoneEtat.Visibility = (TexteEtat.Text ?? "").Length > 0 || (Afficheur.Text ?? "").Length > 0
-                              || BarreProgression.Visibility == Visibility.Visible || Mesures.Visibility == Visibility.Visible
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        Derouler(ZoneEtat, (TexteEtat.Text ?? "").Length > 0 || (Afficheur.Text ?? "").Length > 0
+                           || BarreProgression.Visibility == Visibility.Visible || Mesures.Visibility == Visibility.Visible);
 
 #if PORTABLE
     // Les annonces aux lecteurs d'écran passent par un mécanisme propre à Windows. Sous Linux, rien de plus à faire ici.

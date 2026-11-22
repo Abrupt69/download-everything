@@ -22,6 +22,7 @@ internal static class EssaiSansEcran
                 [_, "telecharger", var adresse, var dossier, ..] => await TelechargerAsync(adresse, dossier, args.Contains("audio")),
                 [_, "torrent", var adresse, var dossier, ..] => await TorrentAsync(adresse, dossier),
                 [_, "doutes", var fichier, ..] => Doutes(fichier),
+                [_, "niveau", var ffmpeg, var fichier, var format, ..] => await NiveauAsync(ffmpeg, fichier, format),
                 _ => Dire(2, "Usage : --essai outils | --essai telecharger ADRESSE DOSSIER [audio] | --essai torrent ADRESSE DOSSIER"),
             };
         }
@@ -35,6 +36,22 @@ internal static class EssaiSansEcran
     {
         Console.WriteLine(message);
         return code;
+    }
+
+    /// <summary>
+    /// Essai du niveau égalisé sur un fichier : mesure, égalisation, puis nouvelle mesure pour constater le résultat.
+    ///   download-everything --essai niveau FFMPEG FICHIER FORMAT
+    /// </summary>
+    private static async Task<int> NiveauAsync(string ffmpeg, string fichier, string format)
+    {
+        var avant = await NiveauSonore.MesurerAsync(ffmpeg, fichier, _ => { });
+        Console.WriteLine($"avant : {avant?.Niveau.ToString("0.00") ?? "?"} LUFS, crête {avant?.Crete.ToString("0.00") ?? "?"} dB");
+        var chrono = Stopwatch.StartNew();
+        Console.WriteLine($"bilan : {await NiveauSonore.EgaliserAsync(ffmpeg, fichier, format, _ => { }) ?? "(format non pris en charge, fichier non touché)"}");
+        Console.WriteLine($"durée : {chrono.Elapsed.TotalSeconds:0.0} s");
+        var apres = await NiveauSonore.MesurerAsync(ffmpeg, fichier, _ => { });
+        Console.WriteLine($"après : {apres?.Niveau.ToString("0.00") ?? "?"} LUFS, crête {apres?.Crete.ToString("0.00") ?? "?"} dB");
+        return 0;
     }
 
     private static async Task<int> OutilsAsync()

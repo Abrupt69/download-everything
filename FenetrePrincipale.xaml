@@ -408,13 +408,24 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="DOWNLOAD EVERYTHING" FontFamily="Bahnschrift" FontStretch="SemiCondensed" FontWeight="SemiBold"
                                FontSize="15" VerticalAlignment="Center" TextWrapping="NoWrap" Grid.ColumnSpan="2"/>
-                    <!-- Les deux vues de la fenêtre. Un torrent se suit autrement qu'un téléchargement, il a la sienne. -->
+                    <!-- Les trois vues de la fenêtre. L'audio d'abord, c'est sur elle que l'application s'ouvre. La vidéo a ses
+                         propres réglages, et un torrent se suit autrement qu'un téléchargement, il a aussi la sienne. -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="176,0,0,0" VerticalAlignment="Center">
-                        <RadioButton x:Name="ChoixVueTelechargement" Style="{StaticResource Touche}" GroupName="Vue" Content="Téléchargement"
-                                     Width="124" Height="30" FontSize="13" IsChecked="True" Checked="ChangerDeVue"
-                                     AutomationProperties.Name="Vue, téléchargement">
+                        <RadioButton x:Name="ChoixAudio" Style="{StaticResource Touche}" GroupName="Vue" Content="Audio"
+                                     Width="88" Height="30" FontSize="13" IsChecked="True" Checked="ChangerDeVue"
+                                     AutomationProperties.Name="Vue, audio"
+                                     ToolTip="Musique et son seul, avec la qualité du son et l'égaliseur">
                             <RadioButton.Tag>
                                 <CornerRadius>2,0,0,2</CornerRadius>
+                            </RadioButton.Tag>
+                        </RadioButton>
+                        <!-- Marge négative d'un pixel pour que les contours se recouvrent au lieu de doubler. -->
+                        <RadioButton x:Name="ChoixVideo" Style="{StaticResource Touche}" GroupName="Vue" Content="Vidéo" Margin="-1,0,0,0"
+                                     Width="88" Height="30" FontSize="13" Checked="ChangerDeVue"
+                                     AutomationProperties.Name="Vue, vidéo"
+                                     ToolTip="Vidéo avec son image, au format et à la définition choisis">
+                            <RadioButton.Tag>
+                                <CornerRadius>0</CornerRadius>
                             </RadioButton.Tag>
                         </RadioButton>
                         <RadioButton x:Name="ChoixVueTorrents" Style="{StaticResource Touche}" GroupName="Vue" Content="Torrents" Margin="-1,0,0,0"
@@ -509,36 +520,42 @@
                 </Grid>
             </Border>
 
-            <!-- SORTIE. Les deux touches font ensemble la largeur du bouton Télécharger, qui tombe juste dessous. -->
+            <!-- FORMAT. Le format du fichier, puis la qualité qui va avec la vue : la définition de l'image en vidéo,
+                 le débit du son en audio. Les deux listes de qualité occupent la même place, une seule se montre. -->
             <Border Style="{StaticResource Ligne}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="112"/>
                         <ColumnDefinition Width="16"/>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource Etiquette}" Text="FORMAT"/>
+                    <ComboBox x:Name="ChoixFormat" Grid.Column="2" AutomationProperties.Name="Format"/>
+                    <ComboBox x:Name="ChoixQualite" Grid.Column="4" AutomationProperties.Name="Qualité de l'image" Visibility="Collapsed"/>
+                    <ComboBox x:Name="ChoixQualiteSon" Grid.Column="4" AutomationProperties.Name="Qualité du son"
+                              ToolTip="Débit du son converti (MP3, M4A, Opus). La source dépasse rarement 160 kb/s, un débit plus haut grossit le fichier sans l'améliorer."/>
+                </Grid>
+            </Border>
+
+            <!-- ÉGALISEUR. Propre à la vue audio, la rangée disparaît en vidéo. -->
+            <Border x:Name="LigneEgaliseur" Style="{StaticResource Ligne}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="112"/>
                         <ColumnDefinition Width="16"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="16"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource Etiquette}" Text="SORTIE"/>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
-                        <RadioButton x:Name="ChoixVideo" Style="{StaticResource Touche}" GroupName="Contenu" Content="Vidéo" IsChecked="True"
-                                     Checked="ChangerDeContenu" AutomationProperties.Name="Contenu, vidéo">
-                            <RadioButton.Tag>
-                                <CornerRadius>2,0,0,2</CornerRadius>
-                            </RadioButton.Tag>
-                        </RadioButton>
-                        <!-- Marge négative d'un pixel pour que les deux contours se recouvrent au lieu de doubler. -->
-                        <RadioButton x:Name="ChoixAudio" Style="{StaticResource Touche}" GroupName="Contenu" Content="Audio seul" Margin="-1,0,0,0" Width="89"
-                                     Checked="ChangerDeContenu" AutomationProperties.Name="Contenu, audio seul">
-                            <RadioButton.Tag>
-                                <CornerRadius>0,2,2,0</CornerRadius>
-                            </RadioButton.Tag>
-                        </RadioButton>
-                    </StackPanel>
-                    <ComboBox x:Name="ChoixFormat" Grid.Column="4" AutomationProperties.Name="Format"/>
-                    <ComboBox x:Name="ChoixQualite" Grid.Column="6" AutomationProperties.Name="Qualité de l'image"/>
+                    <TextBlock Style="{StaticResource Etiquette}" Text="ÉGALISEUR"/>
+                    <ComboBox x:Name="ChoixEgaliseur" Grid.Column="2" AutomationProperties.Name="Égaliseur"
+                              ToolTip="Appliqué à chaque son téléchargé. Le son est alors réencodé, et le format d'origine devient de l'Opus."/>
+                    <!-- L'interrupteur du niveau égalisé. Il ne touche pas au timbre, il s'ajoute donc à l'égaliseur au lieu d'en être un réglage. -->
+                    <CheckBox x:Name="ChoixNiveau" Grid.Column="4" Style="{StaticResource Case}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                              Content="Niveau égalisé pour les sets"
+                              ToolTip="Ramène chaque morceau vers −9 LUFS, le niveau des morceaux de club, pour les enchaîner sans retoucher le gain. Le son n'est pas réencodé et sa dynamique ne change pas. Un morceau trop calme pour être monté sans saturer est laissé tel quel. Avec MP3, FLAC, WAV, AIFF ou ALAC."/>
                 </Grid>
             </Border>
 
@@ -588,30 +605,6 @@
                         <ComboBox x:Name="ChoixSimultanes" Grid.Column="3" AutomationProperties.Name="Nombre de téléchargements à la fois"
                                   ToolTip="Pour les albums, les playlists et plusieurs liens. Au-delà de 5, YouTube refuse plus souvent des demandes."/>
                     </Grid>
-                </Grid>
-            </Border>
-
-            <!-- SON. Deux réglages qui ne valent que pour le son seul : son débit, et un égaliseur. -->
-            <Border Style="{StaticResource Ligne}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="112"/>
-                        <ColumnDefinition Width="16"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="10"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="24"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="10"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource Etiquette}" Text="SON"/>
-                    <TextBlock Grid.Column="2" Style="{StaticResource Etiquette}" Text="QUALITÉ"/>
-                    <ComboBox x:Name="ChoixQualiteSon" Grid.Column="4" AutomationProperties.Name="Qualité du son"
-                              ToolTip="Débit du son converti (MP3, M4A, Opus). La source dépasse rarement 160 kb/s, un débit plus haut grossit le fichier sans l'améliorer."/>
-                    <TextBlock Grid.Column="6" Style="{StaticResource Etiquette}" Text="ÉGALISEUR"/>
-                    <ComboBox x:Name="ChoixEgaliseur" Grid.Column="8" AutomationProperties.Name="Égaliseur"
-                              ToolTip="Appliqué à chaque son téléchargé en mode Audio seul. Le son est alors réencodé, et le format d'origine devient de l'Opus."/>
                 </Grid>
             </Border>
 

@@ -11,7 +11,7 @@
     <AssemblyName>download-everything</AssemblyName>
     <RootNamespace>YtDlpInterface</RootNamespace>
     <Product>Download Everything</Product>
-    <Version>1.2.2</Version>
+    <Version>1.3.0</Version>
     <DefineConstants>$(DefineConstants);PORTABLE</DefineConstants>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <!-- Les textes sont en français, aucune autre langue n'est embarquée. -->
@@ -41,6 +41,7 @@
     <Compile Include="..\VersionDeLApplication.cs" Link="Moteur\VersionDeLApplication.cs" />
     <Compile Include="..\ArbreDeProcessus.cs" Link="Moteur\ArbreDeProcessus.cs" />
     <Compile Include="..\LignesDeTorrents.cs" Link="Moteur\LignesDeTorrents.cs" />
+    <Compile Include="..\NiveauSonore.cs" Link="Moteur\NiveauSonore.cs" />
     <!-- Le code des deux vues, commun lui aussi. Leur dessin, lui, est propre à chaque version (.xaml ici, .axaml là). -->
     <Compile Include="..\FenetrePrincipale.xaml.cs" Link="FenetrePrincipale.axaml.cs" DependentUpon="FenetrePrincipale.axaml" />
     <Compile Include="..\VueTorrents.xaml.cs" Link="VueTorrents.axaml.cs" DependentUpon="VueTorrents.axaml" />

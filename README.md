@@ -17,7 +17,7 @@ Au premier lancement, Windows affiche un écran d'avertissement, parce que le fi
 Pour Debian et Ubuntu, prendre le fichier `.deb` de la [dernière version](../../releases/latest), puis :
 
 ```
-sudo apt install ./download-everything_1.2.2_amd64.deb
+sudo apt install ./download-everything_1.3.0_amd64.deb
 ```
 
 L'application apparaît ensuite dans le menu.
@@ -25,10 +25,10 @@ L'application apparaît ensuite dans le menu.
 ## S'en servir
 
 1. Copier l'adresse de ce qu'on veut. Sous Windows, en revenant sur la fenêtre, elle est déjà dans le champ. On peut aussi la glisser dessus.
-2. Choisir Vidéo ou Audio seul.
+2. Choisir sa vue avec les trois touches du haut, Audio, Vidéo ou Torrents. L'application s'ouvre sur Audio.
 3. Cliquer Télécharger.
 
-Le reste se règle tout seul. La vidéo sort en MP4 et le son en MP3, deux formats qui se lisent partout.
+Le reste se règle tout seul. Le son sort en MP3 et la vidéo en MP4, deux formats qui se lisent partout. Chaque vue ne montre que ses réglages, et retient les siens quand on passe de l'une à l'autre.
 
 ## Ce que ça prend
 
@@ -47,6 +47,8 @@ Une playlist ou un album se télécharge à plusieurs morceaux à la fois, cinq 
 Chaque morceau reçoit sa jaquette, son titre, son artiste et son année, et s'appelle « Artiste - Titre.mp3 ».
 
 Le son vient de YouTube, autour de 128 à 160 kb/s. Choisir du FLAC ou du WAV grossit le fichier sans rien ajouter à ce qu'on entend. Les autres formats (M4A, AAC, Opus, Vorbis, FLAC, WAV, AIFF, ALAC) sont là pour qui en a besoin, tout comme un égaliseur à cinq réglages tout faits.
+
+Pour qui mixe, l'interrupteur « Niveau égalisé pour les sets » ramène chaque morceau vers −9 LUFS, le niveau des morceaux de club, pour les enchaîner sans retoucher le gain à chacun. Le son n'est pas réencodé et sa dynamique ne change pas. Dans un MP3, c'est le réglage de volume des trames qui est déplacé, comme le fait MP3Gain. Un morceau trop calme pour être monté sans saturer est laissé tel quel, et le journal le dit. L'interrupteur marche avec le MP3, le FLAC, le WAV, l'AIFF et l'ALAC.
 
 Il arrive que YouTube donne un autre morceau de la même durée que celui demandé. Quand le titre trouvé ne ressemble pas au titre attendu, le morceau est marqué « à vérifier » et noté dans un fichier texte à côté. À l'oreille de trancher.
 
@@ -88,7 +90,7 @@ Ce qui demande d'être connecté ne passe pas non plus, comme les comptes privé
 
 Le paquet amène avec lui ffmpeg, aria2 et les bibliothèques graphiques. À la première ouverture, l'application télécharge yt-dlp, Deno et gallery-dl depuis leurs dépôts officiels. Il faut donc être connecté à Internet ce jour-là.
 
-Il manque encore quelques petites choses par rapport à Windows. Pas de glisser-déposer, une fenêtre de taille fixe, et la suite des longues playlists Spotify des autres n'est pas lue. Une nouvelle version est signalée, mais elle s'installe en reprenant le paquet.
+Il manque encore quelques petites choses par rapport à Windows. Pas de glisser-déposer, une fenêtre de taille fixe, pas de mouvements quand une zone s'ouvre, et la suite des longues playlists Spotify des autres n'est pas lue. Une nouvelle version est signalée, mais elle s'installe en reprenant le paquet.
 
 La version Linux a été essayée sur Debian 13 et Ubuntu 24.04 dans des machines de test, pas encore sur un vrai bureau. Les retours sont les bienvenus.
 
@@ -139,6 +141,7 @@ L'application est écrite en C#, avec WPF pour Windows et Avalonia pour Linux. L
 | `GalleryDl.cs` | images et galeries |
 | `FichierDirect.cs` | fichier ordinaire pris tel quel |
 | `Aria2.cs`, `VueTorrents.xaml` et `.xaml.cs` | torrents et leur vue |
+| `NiveauSonore.cs` | niveau égalisé pour les sets, sans réencodage |
 | `VersionDeLApplication.cs` | avis de nouvelle version et remplacement de l'exécutable |
 | `MiseAJourDesOutils.cs` | mise à jour des outils embarqués |
 | `ChargeEmbarquee.cs`, `Charge/` | transport des outils dans l'exécutable |
