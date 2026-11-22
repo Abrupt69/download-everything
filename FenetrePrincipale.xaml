@@ -80,6 +80,17 @@
             <Setter Property="MinHeight" Value="52"/>
         </Style>
 
+        <!-- Rangée d'un groupe de réglages. Pas de filet : c'est le groupe entier qui se ferme, pas chaque rangée. -->
+        <Style x:Key="LigneDeGroupe" TargetType="Border">
+            <Setter Property="MinHeight" Value="46"/>
+        </Style>
+
+        <!-- Titre d'un groupe de réglages. Même lettrage que les étiquettes, en clair pour passer devant elles. -->
+        <Style x:Key="TitreDeGroupe" TargetType="TextBlock" BasedOn="{StaticResource Etiquette}">
+            <Setter Property="Foreground" Value="{StaticResource Texte}"/>
+            <Setter Property="Margin" Value="0,14,0,2"/>
+        </Style>
+
         <!-- Bouton principal, le seul élément plein en couleur signal. -->
         <Style x:Key="BoutonSignal" TargetType="Button">
             <Setter Property="Background" Value="{StaticResource Signal}"/>
@@ -465,15 +476,22 @@
             <!-- Vue de téléchargement : tout ce qui suit, jusqu'au pied, se cache quand on passe sur les torrents. -->
             <StackPanel x:Name="VueTelechargement">
 
-            <!-- SOURCE -->
+            <!-- SOURCE. L'adresse et le bouton qui la lance sont sur la même rangée : coller, cliquer, c'est le geste
+                 de tous les jours. Annuler n'apparaît que pendant un travail, à côté. -->
             <Border Style="{StaticResource Ligne}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="112"/>
                         <ColumnDefinition Width="16"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Style="{StaticResource Etiquette}" Text="SOURCE"/>
+                    <Button x:Name="BoutonTelecharger" Grid.Column="3" Style="{StaticResource BoutonSignal}" Width="148" Height="36" Margin="12,0,0,0"
+                            Content="_Télécharger" IsDefault="True" Click="Telecharger" AutomationProperties.Name="Télécharger"/>
+                    <Button x:Name="BoutonAnnuler" Grid.Column="4" Style="{StaticResource BoutonTexte}" Padding="14,0" Margin="4,0,-12,0"
+                            Content="_Annuler" IsCancel="True" Visibility="Collapsed" Click="Annuler"/>
                     <Grid Grid.Column="2" Height="36">
                         <Border Background="{StaticResource Champ}" BorderBrush="{StaticResource Contour}" BorderThickness="1"
                                 CornerRadius="{StaticResource Rayon}"/>
@@ -520,47 +538,63 @@
                 </Grid>
             </Border>
 
-            <!-- FORMAT. Le format du fichier, puis la qualité qui va avec la vue : la définition de l'image en vidéo,
-                 le débit du son en audio. Les deux listes de qualité occupent la même place, une seule se montre. -->
-            <Border Style="{StaticResource Ligne}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="112"/>
-                        <ColumnDefinition Width="16"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="16"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource Etiquette}" Text="FORMAT"/>
-                    <ComboBox x:Name="ChoixFormat" Grid.Column="2" AutomationProperties.Name="Format"/>
-                    <ComboBox x:Name="ChoixQualite" Grid.Column="4" AutomationProperties.Name="Qualité de l'image" Visibility="Collapsed"/>
-                    <ComboBox x:Name="ChoixQualiteSon" Grid.Column="4" AutomationProperties.Name="Qualité du son"
-                              ToolTip="Débit du son converti (MP3, M4A, Opus). La source dépasse rarement 160 kb/s, un débit plus haut grossit le fichier sans l'améliorer."/>
-                </Grid>
+            <!-- Premier groupe, ce qui règle le fichier : le son en vue audio, l'image en vue vidéo. Son titre change
+                 avec la vue. Les deux rangées ont les mêmes colonnes, pour que leurs listes tombent l'une sous l'autre. -->
+            <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,0,0,1" Padding="0,0,0,6">
+                <StackPanel>
+                    <TextBlock x:Name="TitreDuFichier" Style="{StaticResource TitreDeGroupe}" Text="SON"/>
+
+                    <!-- FORMAT. Le format du fichier, puis la qualité qui va avec la vue : le débit du son en audio, la
+                         définition de l'image en vidéo. Les deux listes de qualité occupent la même place, une seule se montre. -->
+                    <Border Style="{StaticResource LigneDeGroupe}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="112"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="24"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource Etiquette}" Text="FORMAT"/>
+                            <ComboBox x:Name="ChoixFormat" Grid.Column="2" AutomationProperties.Name="Format"/>
+                            <TextBlock x:Name="EtiquetteQualite" Grid.Column="4" Style="{StaticResource Etiquette}" Text="QUALITÉ"/>
+                            <ComboBox x:Name="ChoixQualite" Grid.Column="5" AutomationProperties.Name="Qualité de l'image" Visibility="Collapsed"/>
+                            <ComboBox x:Name="ChoixQualiteSon" Grid.Column="5" AutomationProperties.Name="Qualité du son"
+                                      ToolTip="Débit du son converti (MP3, M4A, Opus). La source dépasse rarement 160 kb/s, un débit plus haut grossit le fichier sans l'améliorer."/>
+                        </Grid>
+                    </Border>
+
+                    <!-- ÉGALISEUR. Propre à la vue audio, la rangée disparaît en vidéo. -->
+                    <Border x:Name="LigneEgaliseur" Style="{StaticResource LigneDeGroupe}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="112"/>
+                                <ColumnDefinition Width="16"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="24"/>
+                                <ColumnDefinition Width="84"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource Etiquette}" Text="ÉGALISEUR"/>
+                            <ComboBox x:Name="ChoixEgaliseur" Grid.Column="2" AutomationProperties.Name="Égaliseur"
+                                      ToolTip="Appliqué à chaque son téléchargé. Le son est alors réencodé, et le format d'origine devient de l'Opus."/>
+                            <!-- L'interrupteur du niveau égalisé. Il ne touche pas au timbre, il s'ajoute donc à l'égaliseur au lieu d'en être un réglage. -->
+                            <CheckBox x:Name="ChoixNiveau" Grid.Column="4" Grid.ColumnSpan="2" Style="{StaticResource Case}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                      Content="Niveau égalisé pour les sets"
+                                      ToolTip="Ramène chaque morceau vers −9 LUFS, le niveau des morceaux de club, pour les enchaîner sans retoucher le gain. Le son n'est pas réencodé et sa dynamique ne change pas. Un morceau trop calme pour être monté sans saturer est laissé tel quel. Avec MP3, FLAC, WAV, AIFF ou ALAC."/>
+                        </Grid>
+                    </Border>
+                </StackPanel>
             </Border>
 
-            <!-- ÉGALISEUR. Propre à la vue audio, la rangée disparaît en vidéo. -->
-            <Border x:Name="LigneEgaliseur" Style="{StaticResource Ligne}">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="112"/>
-                        <ColumnDefinition Width="16"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="16"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource Etiquette}" Text="ÉGALISEUR"/>
-                    <ComboBox x:Name="ChoixEgaliseur" Grid.Column="2" AutomationProperties.Name="Égaliseur"
-                              ToolTip="Appliqué à chaque son téléchargé. Le son est alors réencodé, et le format d'origine devient de l'Opus."/>
-                    <!-- L'interrupteur du niveau égalisé. Il ne touche pas au timbre, il s'ajoute donc à l'égaliseur au lieu d'en être un réglage. -->
-                    <CheckBox x:Name="ChoixNiveau" Grid.Column="4" Style="{StaticResource Case}" HorizontalAlignment="Left" VerticalAlignment="Center"
-                              Content="Niveau égalisé pour les sets"
-                              ToolTip="Ramène chaque morceau vers −9 LUFS, le niveau des morceaux de club, pour les enchaîner sans retoucher le gain. Le son n'est pas réencodé et sa dynamique ne change pas. Un morceau trop calme pour être monté sans saturer est laissé tel quel. Avec MP3, FLAC, WAV, AIFF ou ALAC."/>
-                </Grid>
-            </Border>
+            <!-- Second groupe, où va le fichier et comment les listes sont prises. Pas de filet en bas : la zone d'état
+                 ou le pied, qui suivent, portent le leur. -->
+            <StackPanel Margin="0,0,0,6">
+            <TextBlock Style="{StaticResource TitreDeGroupe}" Text="DESTINATION"/>
 
             <!-- DOSSIER. Le nom du dossier d'abord, le chemin qui y mène ensuite, en plus discret. -->
-            <Border x:Name="LigneDossier" Style="{StaticResource Ligne}">
+            <Border x:Name="LigneDossier" Style="{StaticResource LigneDeGroupe}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="112"/>
@@ -582,15 +616,15 @@
                 </Grid>
             </Border>
 
-            <!-- OPTIONS -->
-            <Border Style="{StaticResource Ligne}">
+            <!-- LISTES. Les deux réglages qui ne jouent que pour un album, une playlist ou plusieurs liens. -->
+            <Border Style="{StaticResource LigneDeGroupe}">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="112"/>
                         <ColumnDefinition Width="16"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Style="{StaticResource Etiquette}" Text="OPTIONS"/>
+                    <TextBlock Style="{StaticResource Etiquette}" Text="LISTES"/>
                     <Grid Grid.Column="2">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -603,35 +637,12 @@
                                   ToolTip="Quand l'adresse désigne une vidéo qui fait partie d'une playlist, prendre toute la playlist"/>
                         <TextBlock Grid.Column="1" Style="{StaticResource Etiquette}" Text="À LA FOIS"/>
                         <ComboBox x:Name="ChoixSimultanes" Grid.Column="3" AutomationProperties.Name="Nombre de téléchargements à la fois"
-                                  ToolTip="Pour les albums, les playlists et plusieurs liens. Au-delà de 5, YouTube refuse plus souvent des demandes."/>
+                                  ToolTip="Pour les albums, les playlists et plusieurs liens. Cinq au plus : au-delà, YouTube refuse la connexion."/>
                     </Grid>
                 </Grid>
             </Border>
 
-            <!-- Actions, alignées sur la colonne des commandes. Annuler n'apparaît que pendant un travail. -->
-            <Grid Margin="0,24,0,24">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="128"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <Button x:Name="BoutonTelecharger" Grid.Column="1" Style="{StaticResource BoutonSignal}" Content="_Télécharger"
-                        IsDefault="True" Click="Telecharger" AutomationProperties.Name="Télécharger"/>
-                <Button x:Name="BoutonAnnuler" Grid.Column="2" Style="{StaticResource BoutonTexte}" Height="40" Padding="16,0" Margin="8,0,0,0"
-                        Content="_Annuler" IsCancel="True" Visibility="Collapsed" Click="Annuler"/>
-                <!-- N'apparaît qu'après une liste dont des éléments n'ont pas abouti. -->
-                <Button x:Name="BoutonReprendre" Grid.Column="3" Style="{StaticResource BoutonTexte}" Height="40" Padding="16,0" Margin="8,0,0,0"
-                        Visibility="Collapsed" Click="ReprendreLesManquants"
-                        ToolTip="Relance seulement ce qui n'a pas abouti dans la dernière liste, sans relire le lien"/>
-                <Button x:Name="BoutonMettreAJour" Grid.Column="5" Style="{StaticResource BoutonTexte}" Height="40" Margin="0,0,-12,0"
-                        Foreground="{StaticResource TexteDoux}" Content="Tout _mettre à jour" Click="MettreAJour"
-                        AutomationProperties.Name="Tout mettre à jour"
-                        ToolTip="Cherche les dernières versions de yt-dlp, ffmpeg, Deno, spotDL et gallery-dl sur leurs dépôts officiels"/>
-            </Grid>
+            </StackPanel>
 
             <!-- ÉTAT. Rien au repos. La colonne de gauche sert d'afficheur : le pourcentage en grand, puis le mot de la fin. -->
             <Border x:Name="ZoneEtat" Visibility="Collapsed" BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0" MinHeight="64" Padding="0,12">
@@ -678,6 +689,11 @@
 
                         <TextBlock x:Name="TexteEtat" Margin="0,12,0,0" TextWrapping="Wrap" Visibility="Collapsed"
                                    Foreground="{StaticResource TexteDoux}" AutomationProperties.LiveSetting="Polite"/>
+
+                        <!-- N'apparaît qu'après une liste dont des éléments n'ont pas abouti, sous le message qui le dit. -->
+                        <Button x:Name="BoutonReprendre" Style="{StaticResource BoutonTexte}" Height="32" Margin="-12,8,0,0"
+                                HorizontalAlignment="Left" Foreground="{StaticResource Signal}" Visibility="Collapsed" Click="ReprendreLesManquants"
+                                ToolTip="Relance seulement ce qui n'a pas abouti dans la dernière liste, sans relire le lien"/>
 
                         <!-- Playlist. La barre du haut donne l'ensemble, cette liste dépliable donne chaque vidéo. -->
                         <ToggleButton x:Name="BasculeElements" Style="{StaticResource BoutonTexte}" Height="32" Margin="-12,8,0,0"
@@ -829,29 +845,41 @@
             <!-- Vue des torrents, posée ici par le code à la première visite (voir ChangerDeVue). -->
             <Border x:Name="ZoneTorrents" Visibility="Collapsed"/>
 
-            <!-- Pied. Les versions des outils, l'accès au compte Spotify et au journal. -->
-            <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
+            <!-- Pied. D'abord les outils : leurs versions, et le bouton qui les met à jour, à côté de ce qu'il change. -->
+            <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0" MinHeight="44">
                 <Grid>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="112"/>
+                        <ColumnDefinition Width="16"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" TextElement.FontFamily="Bahnschrift"
+                    <TextBlock Style="{StaticResource Etiquette}" Text="OUTILS"/>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" TextElement.FontFamily="Bahnschrift"
                                 TextElement.FontSize="12" TextElement.Foreground="{StaticResource TexteEtiquette}">
                         <TextBlock x:Name="TexteVersion" Text="Recherche des outils…" Typography.NumeralAlignment="Tabular"/>
-                        <TextBlock x:Name="VersionFfmpeg" Margin="16,0,0,0"/>
-                        <TextBlock x:Name="VersionDeno" Margin="16,0,0,0"/>
-                        <TextBlock x:Name="VersionSpotDl" Margin="16,0,0,0"/>
-                        <TextBlock x:Name="VersionGalleryDl" Margin="16,0,0,0"/>
+                        <TextBlock x:Name="VersionFfmpeg" Margin="14,0,0,0"/>
+                        <TextBlock x:Name="VersionDeno" Margin="14,0,0,0"/>
+                        <TextBlock x:Name="VersionSpotDl" Margin="14,0,0,0"/>
+                        <TextBlock x:Name="VersionGalleryDl" Margin="14,0,0,0"/>
                     </StackPanel>
-                    <ToggleButton x:Name="BasculeCle" Grid.Column="1" Style="{StaticResource BoutonTexte}" Height="32"
+                    <Button x:Name="BoutonMettreAJour" Grid.Column="3" Style="{StaticResource BoutonTexte}" Height="32" Margin="8,0,-12,0"
+                            Foreground="{StaticResource TexteDoux}" Content="Tout _mettre à jour" Click="MettreAJour"
+                            AutomationProperties.Name="Tout mettre à jour"
+                            ToolTip="Cherche les dernières versions de yt-dlp, ffmpeg, Deno, spotDL et gallery-dl sur leurs dépôts officiels"/>
+                </Grid>
+            </Border>
+
+            <!-- Puis l'accès au compte Spotify et au journal, qui n'ont de sens que pour un téléchargement. -->
+            <Border x:Name="PiedDesBascules" BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0" Padding="0,4,0,0">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ToggleButton x:Name="BasculeCle" Style="{StaticResource BoutonTexte}" Height="32"
                                   Foreground="{StaticResource TexteDoux}" Content="Compte _Spotify"
                                   Checked="BasculerLaCle" Unchecked="BasculerLaCle"/>
-                    <ToggleButton x:Name="BasculeJournal" Grid.Column="2" Style="{StaticResource BoutonTexte}" Height="32" Margin="0,0,-12,0"
+                    <ToggleButton x:Name="BasculeJournal" Style="{StaticResource BoutonTexte}" Height="32" Margin="0,0,-12,0"
                                   Foreground="{StaticResource TexteDoux}" Content="Afficher le _journal"
                                   Checked="BasculerLeJournal" Unchecked="BasculerLeJournal"/>
-                </Grid>
+                </StackPanel>
             </Border>
         </StackPanel>
     </ScrollViewer>

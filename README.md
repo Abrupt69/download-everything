@@ -17,7 +17,7 @@ Au premier lancement, Windows affiche un écran d'avertissement, parce que le fi
 Pour Debian et Ubuntu, prendre le fichier `.deb` de la [dernière version](../../releases/latest), puis :
 
 ```
-sudo apt install ./download-everything_1.3.0_amd64.deb
+sudo apt install ./download-everything_1.4.0_amd64.deb
 ```
 
 L'application apparaît ensuite dans le menu.
@@ -26,7 +26,7 @@ L'application apparaît ensuite dans le menu.
 
 1. Copier l'adresse de ce qu'on veut. Sous Windows, en revenant sur la fenêtre, elle est déjà dans le champ. On peut aussi la glisser dessus.
 2. Choisir sa vue avec les trois touches du haut, Audio, Vidéo ou Torrents. L'application s'ouvre sur Audio.
-3. Cliquer Télécharger.
+3. Cliquer Télécharger, juste à côté de l'adresse.
 
 Le reste se règle tout seul. Le son sort en MP3 et la vidéo en MP4, deux formats qui se lisent partout. Chaque vue ne montre que ses réglages, et retient les siens quand on passe de l'une à l'autre.
 
@@ -42,7 +42,7 @@ Plusieurs liens collés d'un coup partent ensemble.
 
 ## Bon à savoir
 
-Une playlist ou un album se télécharge à plusieurs morceaux à la fois, cinq par défaut, avec une ligne et une barre pour chacun. Ce qui est déjà dans le dossier n'est pas repris. À la fin, un bouton relance seulement ce qui a raté.
+Une playlist ou un album se télécharge à plusieurs morceaux à la fois, cinq au plus, avec une ligne et une barre pour chacun. Au-delà de cinq, YouTube refuse la connexion, le réglage ne va donc pas plus haut. Ce qui est déjà dans le dossier n'est pas repris. À la fin, un bouton relance seulement ce qui a raté.
 
 Chaque morceau reçoit sa jaquette, son titre, son artiste et son année, et s'appelle « Artiste - Titre.mp3 ».
 

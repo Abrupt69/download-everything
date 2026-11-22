@@ -172,8 +172,13 @@ public partial class FenetrePrincipale : Window
         AdapterLesListes();
 
         // Les deux options, relues telles que laissées la dernière fois, et notées dès qu'on les change.
-        ChoixSimultanes.ItemsSource = Enumerable.Range(1, 10).ToList();
-        ChoixSimultanes.SelectedItem = int.TryParse(Reglages.Lire("simultanes", "5"), out var simultanes) && simultanes is >= 1 and <= 10 ? simultanes : 5;
+        // De 1 à 5. Les choix de 6 à 10 ont été retirés le 22/11/2026 : à dix à la fois, YouTube refusait la
+        // connexion dès le départ, et chaque nouvel essai relançait le refus. Un réglage plus haut, retenu d'une
+        // version précédente, est ramené à 5.
+        ChoixSimultanes.ItemsSource = Enumerable.Range(1, SimultanesAuPlus).ToList();
+        ChoixSimultanes.SelectedItem = int.TryParse(Reglages.Lire("simultanes", "5"), out var simultanes) && simultanes >= 1
+            ? Math.Min(simultanes, SimultanesAuPlus)
+            : SimultanesAuPlus;
         ChoixSimultanes.SelectionChanged += (_, _) => Reglages.Ecrire("simultanes", Simultanes.ToString(CultureInfo.InvariantCulture));
         ChoixQualiteSon.ItemsSource = YtDlp.QualitesDuSon;
         var qualiteNotee = Reglages.Lire("qualite-du-son", "0");
@@ -361,6 +366,9 @@ public partial class FenetrePrincipale : Window
             _formatsEnChangement = false;
         }
         ChoixFormat.IsEnabled = avecFfmpeg;
+        // Le groupe porte le nom de ce qu'il règle, et sa seconde liste celui de la qualité qui va avec la vue.
+        if (TitreDuFichier is not null) TitreDuFichier.Text = audio ? "SON" : "IMAGE";
+        if (EtiquetteQualite is not null) EtiquetteQualite.Text = audio ? "QUALITÉ" : "DÉFINITION";
         // La définition de l'image pour la vidéo. Le débit du son et l'égaliseur pour l'audio, qui demandent ffmpeg.
         ChoixQualite.Visibility = audio ? Visibility.Collapsed : Visibility.Visible;
         if (ChoixQualiteSon is not null)
@@ -1334,8 +1342,9 @@ public partial class FenetrePrincipale : Window
     // ───────────────────────────── Listes menées à plusieurs de front ─────────────────────────────
 
     // Nombre de téléchargements menés en même temps dans un album, une playlist ou une file de liens.
-    // Réglable de 1 à 10 dans la fenêtre. Cinq par défaut, au-delà YouTube refuse plus souvent des demandes.
-    private int Simultanes => ChoixSimultanes.SelectedItem is int nombre ? nombre : 5;
+    // Réglable de 1 à 5 dans la fenêtre, cinq par défaut. Au-delà, YouTube refuse la connexion.
+    private const int SimultanesAuPlus = 5;
+    private int Simultanes => ChoixSimultanes.SelectedItem is int nombre ? Math.Min(nombre, SimultanesAuPlus) : SimultanesAuPlus;
 
     // Qualité du son choisie au moment où l'on clique Télécharger, gardée telle quelle pour tout le travail.
     private string _qualiteDuSon = "0";
@@ -2304,8 +2313,9 @@ public partial class FenetrePrincipale : Window
         var torrentsAvant = ZoneTorrents.Visibility == Visibility.Visible;
         VueTelechargement.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
         ZoneTorrents.Visibility = torrents ? Visibility.Visible : Visibility.Collapsed;
-        // Le compte Spotify et le journal appartiennent à la vue de téléchargement.
+        // Le compte Spotify et le journal appartiennent à la vue de téléchargement : leur rangée du pied part avec elle.
         BasculeCle.Visibility = BasculeJournal.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
+        PiedDesBascules.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
         if (torrents != torrentsAvant)
         {
             // On entre dans les torrents ou on en sort : toute la vue qui arrive monte de quelques points en apparaissant.
