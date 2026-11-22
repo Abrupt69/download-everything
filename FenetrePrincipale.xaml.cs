@@ -324,10 +324,13 @@ public partial class FenetrePrincipale : Window
     // Le format choisi dans chaque vue, retrouvé quand on y revient.
     private int _formatAudio, _formatVideo;
 
+    // Vrai pendant que la liste des formats est remplacée. Ce qui s'y sélectionne alors n'est pas un choix de l'utilisateur.
+    private bool _formatsEnChangement;
+
     /// <summary>Retient le format choisi, dans la vue où il l'a été.</summary>
     private void RetenirLeFormat()
     {
-        if (ChoixFormat.SelectedIndex < 0) return;
+        if (_formatsEnChangement || ChoixFormat.SelectedIndex < 0) return;
         if (ReferenceEquals(ChoixFormat.ItemsSource, YtDlp.FormatsAudio)) _formatAudio = ChoixFormat.SelectedIndex;
         else if (ReferenceEquals(ChoixFormat.ItemsSource, YtDlp.FormatsVideo)) _formatVideo = ChoixFormat.SelectedIndex;
     }
@@ -348,8 +351,14 @@ public partial class FenetrePrincipale : Window
 
         if (!ReferenceEquals(ChoixFormat.ItemsSource, formats))
         {
+            // Le format voulu est lu avant de remplacer la liste. « Format d'origine du site » figure dans toutes :
+            // s'il était choisi, la liste le garde en changeant de contenu, et il passerait pour le choix de la vue
+            // (vu aux essais sous Linux, où l'application s'ouvrait dessus au lieu du MP3).
+            var voulu = Math.Clamp(audio ? _formatAudio : _formatVideo, 0, formats.Length - 1);
+            _formatsEnChangement = true;
             ChoixFormat.ItemsSource = formats;
-            ChoixFormat.SelectedIndex = Math.Clamp(audio ? _formatAudio : _formatVideo, 0, formats.Length - 1);
+            ChoixFormat.SelectedIndex = voulu;
+            _formatsEnChangement = false;
         }
         ChoixFormat.IsEnabled = avecFfmpeg;
         // La définition de l'image pour la vidéo. Le débit du son et l'égaliseur pour l'audio, qui demandent ffmpeg.
