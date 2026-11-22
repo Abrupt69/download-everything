@@ -11,7 +11,7 @@
     <AssemblyName>download-everything</AssemblyName>
     <RootNamespace>YtDlpInterface</RootNamespace>
     <Product>Download Everything</Product>
-    <Version>1.2.1</Version>
+    <Version>1.2.2</Version>
     <DefineConstants>$(DefineConstants);PORTABLE</DefineConstants>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <!-- Les textes sont en français, aucune autre langue n'est embarquée. -->

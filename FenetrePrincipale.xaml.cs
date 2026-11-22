@@ -1181,6 +1181,15 @@ public partial class FenetrePrincipale : Window
         /// <summary>Le titre de la vidéo que yt-dlp est en train de prendre pour ce travail.</summary>
         public string TitreTrouve = "";
 
+        /// <summary>Vrai quand YouTube a refusé la connexion pendant la tentative en cours. Le travail retourne alors dans la file.</summary>
+        public bool Refuse;
+
+        /// <summary>Les refus qui tiennent à ce travail lui-même : d'autres sont passés entre-temps, sans blocage de la connexion.</summary>
+        public int RefusIsoles;
+
+        /// <summary>Le nombre de réussites de la liste au moment du refus précédent de ce travail, pour savoir si d'autres sont passés depuis.</summary>
+        public int ReussitesAuDernierRefus = -1;
+
         public Process? Processus;
         public double Recu, Total, Debit;   // le fichier en cours de transfert
         public double DejaRecu;             // les fichiers déjà finis de ce travail, l'image avant le son par exemple
@@ -1188,30 +1197,52 @@ public partial class FenetrePrincipale : Window
         public string Liaison = "—", Format = "—";
     }
 
-    // Blocage de YouTube. Après beaucoup de demandes rapprochées, YouTube refuse tout ce qui vient de la même
-    // connexion et répond « connectez-vous pour confirmer que vous n'êtes pas un robot ». Le refus dure quelques
-    // heures. Continuer ne sert à rien et le prolonge : au bout de quelques refus, la liste s'arrête d'elle-même.
+    // Blocage de YouTube. Après beaucoup de demandes rapprochées, YouTube refuse ce qui vient de la même connexion.
+    // Deux formes : « Sign in to confirm you're not a bot », relevée ici sur une longue playlist, et « rate-limited
+    // by YouTube for up to an hour », écrite dans le code de yt-dlp. Insister ne sert à rien et prolonge le refus.
+    // Une liste ne s'arrête plus pour autant. Elle se met en pause, attend, envoie un seul morceau en éclaireur,
+    // puis repart au ralenti. Un morceau refusé retourne dans la file, il n'est pas « introuvable ».
     private const string MarqueDuBlocage = "Sign in to confirm";
-    private const int RefusAvantArret = 6;
+    private const string MarqueDeLaLimite = "rate-limited by YouTube";
+
+    /// <summary>Vrai pour une ligne de yt-dlp qui rapporte un refus de la connexion par YouTube.</summary>
+    private static bool EstUnRefusDeYoutube(string ligne) =>
+        ligne.Contains(MarqueDeLaLimite, StringComparison.Ordinal)
+        // « Sign in to confirm your age » désigne une vidéo réservée aux adultes, pas un blocage de la connexion.
+        || (ligne.Contains(MarqueDuBlocage, StringComparison.Ordinal) && !ligne.Contains("your age", StringComparison.Ordinal));
+
+    // Il faut plusieurs refus de suite, sans une réussite entre eux, pour parler de blocage. Un refus isolé arrive aussi sans cela.
+    private const int RefusAvantPause = 3;
+
+    // Minutes d'attente, de plus en plus longues tant que l'éclaireur est refusé. yt-dlp annonce « jusqu'à une heure ».
+    // Au bout de la série, près de quatre heures, la liste rend la main.
+    private static readonly int[] AttentesApresRefus = [5, 15, 30, 60, 60, 60];
+
+    // Une fois repartie, la liste garde cette allure jusqu'au bout. C'est la rafale de demandes qui a provoqué le refus.
+    private const int DeFrontApresRefus = 2;
+    private const int SouffleApresRefus = 5;   // secondes entre deux départs
+
+    // Un morceau refusé trois fois alors que d'autres passent entre-temps : le refus vient de lui, on n'insiste pas.
+    private const int RefusIsolesAvantAbandon = 3;
+
     private int _refusDeYoutube;
     private bool _youtubeBloque;
+
+    // Pour les essais (variable DOWNLOAD_EVERYTHING_ESSAI_REFUS, « nombre,secondes ») : les premiers lancements d'une
+    // liste reçoivent un refus fabriqué au lieu de partir vers YouTube, et les attentes se comptent en secondes.
+    // Sans cela il faudrait se faire bloquer pour de bon pour vérifier la pause.
+    private int _refusFabriques;
+    private int? _attenteDEssai;
 
     private const string MessageDuBlocage =
         "YouTube refuse pour l'instant les demandes venant de cette connexion, après trop de téléchargements rapprochés. "
         + "Ce n'est pas une panne et les morceaux ne sont pas introuvables. Réessayez dans quelques heures, avec moins de "
         + "téléchargements à la fois (3 par exemple). Ce qui est déjà reçu reste dans le dossier et ne sera pas repris.";
 
-    /// <summary>Compte un refus de YouTube. Au-delà du seuil, arrête la liste en cours et tous ses yt-dlp.</summary>
-    private void NoterUnRefusDeYoutube()
-    {
-        _refusDeYoutube++;
-        if (_youtubeBloque || !_listeMaitrisee || _refusDeYoutube < RefusAvantArret) return;
-        _youtubeBloque = true;
-        _annulationDemandee = true;   // plus aucun travail ne démarre
-        Etat("YouTube refuse les demandes de cette connexion. Arrêt de la liste…", Ton.Erreur, annoncer: true);
-        var enMarche = _actifs.Select(t => t.Processus).Append(_lectureEnFond).OfType<Process>().ToList();
-        _ = Task.Run(() => Parallel.ForEach(enMarche, processus => ArbreDeProcessus.Arreter(processus)));
-    }
+    private const string MessageApresLesAttentes =
+        "YouTube refuse toujours les demandes de cette connexion, après six pauses et près de quatre heures d'attente. "
+        + "Ce n'est pas une panne et les morceaux ne sont pas introuvables. Ce qui est déjà reçu reste dans le dossier, "
+        + "le bouton de reprise relancera le reste plus tard.";
 
     // Débuts des lignes que yt-dlp écrit pour chaque recherche, sans intérêt dans le journal d'une liste.
     private static readonly string[] BruitDeRecherche =
@@ -1244,6 +1275,20 @@ public partial class FenetrePrincipale : Window
         var deFront = suite is null ? Math.Min(Simultanes, travaux.Count) : Simultanes;
         var suiteVersee = suite is null;
 
+        // Allure de la liste. Elle ne change que si YouTube refuse la connexion, voir MettreEnPause.
+        var permis = deFront;                    // combien de travaux peuvent être en route à la fois
+        var souffle = TimeSpan.Zero;             // délai entre deux départs, une fois au ralenti
+        var prochainDepart = DateTime.MinValue;
+        var reussites = 0;
+        var refusDeSuite = 0;                    // refus sans une réussite entre eux
+        var pausesDeSuite = 0;                   // pauses sans qu'un éclaireur soit passé
+        DateTime? reprise = null;                // l'heure où la pause en cours finit
+        var eclaireurAttendu = false;            // après une pause, un seul travail part d'abord
+        Travail? eclaireur = null;
+        var essai = (Environment.GetEnvironmentVariable("DOWNLOAD_EVERYTHING_ESSAI_REFUS") ?? "").Split(',');
+        _refusFabriques = int.TryParse(essai[0], out var fabriques) ? fabriques : 0;
+        _attenteDEssai = essai.Length > 1 && int.TryParse(essai[1], out var secondesDEssai) ? secondesDEssai : null;
+
         Mesures.Visibility = Visibility.Visible;
         BarreProgression.ClearValue(ForegroundProperty);
         BarreProgression.Value = 0;
@@ -1272,6 +1317,47 @@ public partial class FenetrePrincipale : Window
             Montrer();
         }
 
+        // Le décompte de la pause, rafraîchi par les ouvriers qui attendent.
+        void MontrerLaPause(bool annoncer = false)
+        {
+            var reste = (reprise!.Value - DateTime.Now).TotalSeconds;
+            Etat($"YouTube refuse les demandes de cette connexion. Pause jusqu'à {reprise.Value:HH\\hmm}, encore {Duree(reste)}. "
+                 + "La liste reprendra seule, au ralenti. Rien n'est perdu.", Ton.Neutre, annoncer);
+            Montrer();
+            // Après Montrer, qui remet l'icône de la barre des tâches en marche normale : pendant la pause elle reste en jaune.
+            BarreDesTaches.ProgressState = TaskbarItemProgressState.Paused;
+        }
+
+        // YouTube refuse la connexion. Plus rien ne part jusqu'à l'heure de reprise, puis un seul travail, en éclaireur.
+        // Les yt-dlp déjà en route ne sont pas arrêtés : un transfert commencé va au bout, un refus revient en quelques secondes.
+        void MettreEnPause()
+        {
+            if (reprise is not null || _annulationDemandee) return;
+            if (pausesDeSuite >= AttentesApresRefus.Length)
+            {
+                // Toute la série d'attentes est passée sans qu'un seul éclaireur aboutisse : la liste rend la main.
+                _youtubeBloque = true;
+                _annulationDemandee = true;
+                foreach (var enFile in file) enFile.Element.Etat = "refusé";
+                if (_lectureEnFond is { } lecture) _ = Task.Run(() => ArbreDeProcessus.Arreter(lecture));
+                return;
+            }
+
+            var attente = _attenteDEssai is { } secondes
+                ? TimeSpan.FromSeconds(secondes)
+                : TimeSpan.FromMinutes(AttentesApresRefus[pausesDeSuite]);
+            pausesDeSuite++;
+            reprise = DateTime.Now + attente;
+            eclaireurAttendu = true;
+            permis = 1;
+            // Un blocage reconnu : les refus qui l'entourent ne tiennent pas aux morceaux eux-mêmes.
+            foreach (var enFile in file) enFile.RefusIsoles = 0;
+            var duree = attente.TotalMinutes >= 1 ? $"{attente.TotalMinutes:0} minutes" : $"{attente.TotalSeconds:0} secondes";
+            Ecrire($"YouTube refuse les demandes de cette connexion. Pause de {duree}, reprise à {reprise.Value:HH\\hmm}. "
+                   + "Les morceaux refusés retournent dans la file, ils seront repris.");
+            MontrerLaPause(annoncer: true);
+        }
+
         async Task Ouvrier(int numero)
         {
             // Un fichier de suivi par ouvrier, sinon cinq yt-dlp écriraient leur résultat au même endroit.
@@ -1280,12 +1366,39 @@ public partial class FenetrePrincipale : Window
             {
                 if (file.Count == 0)
                 {
-                    // Plus rien dans la file. Si la suite de la playlist est encore en lecture on l'attend, sinon c'est fini.
-                    if (suiteVersee) break;
+                    if (suiteVersee)
+                    {
+                        // Plus rien dans la file. Mais un travail encore en route y reviendra si YouTube le refuse,
+                        // on ne part donc qu'une fois tous les travaux rentrés.
+                        if (_actifs.Count == 0) break;
+                        await Task.Delay(300);
+                        continue;
+                    }
+                    // La suite de la playlist est encore en lecture, on l'attend.
                     await Task.WhenAny(suite!, Task.Delay(500));
                     if (suite!.IsCompleted && !suiteVersee) VerserLaSuite();
                     // Le temps écoulé continue d'avancer pendant l'attente, sinon l'affichage semblerait figé.
                     else if (numero == 1) Montrer();
+                    continue;
+                }
+
+                if (reprise is { } heure)
+                {
+                    if (DateTime.Now < heure)
+                    {
+                        MontrerLaPause();
+                        await Task.Delay(500);
+                        continue;
+                    }
+                    reprise = null;
+                    BarreDesTaches.ProgressState = TaskbarItemProgressState.Normal;
+                    Ecrire("Fin de la pause. Un seul morceau part d'abord, pour voir si YouTube répond de nouveau.");
+                    Etat("Fin de la pause, essai d'un seul morceau…", annoncer: true);
+                }
+                // Jamais plus de travaux en route que permis, et un souffle entre deux départs quand la liste est au ralenti.
+                if (_actifs.Count >= permis || DateTime.Now < prochainDepart)
+                {
+                    await Task.Delay(300);
                     continue;
                 }
 
@@ -1302,6 +1415,13 @@ public partial class FenetrePrincipale : Window
                     continue;
                 }
                 _actifs.Add(travail);
+                if (eclaireurAttendu)
+                {
+                    eclaireur = travail;
+                    eclaireurAttendu = false;
+                }
+                if (souffle > TimeSpan.Zero) prochainDepart = DateTime.Now + souffle;
+                travail.Refuse = false;
                 travail.Element.Etat = "recherche";
                 Montrer();
 
@@ -1326,13 +1446,18 @@ public partial class FenetrePrincipale : Window
                     travail.DejaLa = false;
                     travail.TitreTrouve = "";
                     await LancerUnTravailAsync(executable, tentative(suivi), travail, Montrer);
-                    if (YtDlp.LireLaTrace(suivi) is not { Count: > 0 } obtenus) continue;
-                    fichier = obtenus[^1];
-                    break;
+                    if (YtDlp.LireLaTrace(suivi) is { Count: > 0 } obtenus)
+                    {
+                        fichier = obtenus[^1];
+                        break;
+                    }
+                    // Refusé par YouTube : la tentative suivante le serait aussi, inutile d'envoyer une demande de plus.
+                    if (travail.Refuse) break;
                 }
 
                 // Dernier recours pour une adresse où yt-dlp n'a rien trouvé : des images, par gallery-dl.
-                if (fichier is null && !_annulationDemandee && travail.RecoursImages is { } recours && GalleryDl.Trouver() is { } galerie)
+                // Pas après un refus de YouTube, où il n'y a rien à chercher ailleurs.
+                if (fichier is null && !_annulationDemandee && !travail.Refuse && travail.RecoursImages is { } recours && GalleryDl.Trouver() is { } galerie)
                 {
                     var images = await LancerLeRecoursImagesAsync(galerie, recours(), travail);
                     if (images.Count > 0)
@@ -1348,10 +1473,27 @@ public partial class FenetrePrincipale : Window
                 // Rien d'obtenu : la jaquette que yt-dlp a pu poser avant le transfert ne reste pas seule dans le dossier.
                 if (fichier is null) YtDlp.EffacerLaJaquetteOrpheline(travail.CheminAttendu);
 
+                var refuse = fichier is null && travail.Refuse && !_annulationDemandee;
+                var etaitLEclaireur = travail == eclaireur;
+                if (etaitLEclaireur) eclaireur = null;
+                if (etaitLEclaireur && !refuse && !_annulationDemandee)
+                {
+                    // L'éclaireur est revenu sans refus, trouvé ou non : YouTube répond. La liste repart, moins vite qu'avant.
+                    pausesDeSuite = 0;
+                    permis = Math.Min(deFront, DeFrontApresRefus);
+                    souffle = TimeSpan.FromSeconds(_attenteDEssai is null ? SouffleApresRefus : 1);
+                    prochainDepart = DateTime.Now + souffle;
+                    var allure = permis > 1 ? $"{permis} à la fois" : "un à la fois";
+                    Ecrire($"YouTube répond de nouveau. La liste repart au ralenti, {allure}, avec {souffle.TotalSeconds:0} secondes entre deux départs.");
+                    Etat($"{_total} téléchargements, au ralenti après un refus de YouTube, {allure}", annoncer: true);
+                }
+
                 if (fichier is not null)
                 {
                     fichiers.Add(fichier);
                     travail.Reussi = true;
+                    reussites++;
+                    refusDeSuite = 0;
                     // Garde-fou : le morceau est arrivé, mais la vidéo retenue porte-t-elle bien son titre ?
                     var doute = travail.DejaLa || travail.TitreAttendu is null ? null : YtDlp.DouteSurLeTitre(travail.TitreAttendu, travail.TitreTrouve);
                     if (doute is not null)
@@ -1367,6 +1509,32 @@ public partial class FenetrePrincipale : Window
                 {
                     // Arrêté par l'utilisateur, ou par le blocage de YouTube. Dans les deux cas le morceau n'est pas « introuvable ».
                     travail.Element.Etat = _youtubeBloque ? "refusé" : "annulé";
+                }
+                else if (refuse)
+                {
+                    // Un refus ne compte contre le morceau lui-même que hors blocage, et si d'autres sont passés depuis son refus précédent.
+                    if (reprise is null && reussites > travail.ReussitesAuDernierRefus) travail.RefusIsoles++;
+                    travail.ReussitesAuDernierRefus = reussites;
+                    if (travail.RefusIsoles >= RefusIsolesAvantAbandon)
+                    {
+                        travail.Element.Etat = "refusé";
+                        echecs++;
+                        faits++;
+                        Ecrire($"ERROR: {travail.Element.Titre} est refusé par YouTube alors que les autres passent. Il est laissé de côté.", travail.Element.Numero);
+                    }
+                    else
+                    {
+                        // Refusé, pas introuvable : il retourne en fin de file et sera repris.
+                        travail.Element.Etat = "en attente";
+                        travail.Element.Pourcent = 0;
+                        file.Enqueue(travail);
+                        refusDeSuite++;
+                        // Rien ne repart pendant deux secondes : les autres travaux en route reviennent, et l'on sait
+                        // si c'est un blocage avant d'avoir envoyé d'autres demandes pour rien.
+                        if (prochainDepart < DateTime.Now.AddSeconds(2)) prochainDepart = DateTime.Now.AddSeconds(2);
+                        // Après une pause, le refus du seul éclaireur suffit à dire que le blocage dure. Sinon il en faut plusieurs de suite.
+                        if (etaitLEclaireur || refusDeSuite >= Math.Min(RefusAvantPause, travaux.Count)) MettreEnPause();
+                    }
                 }
                 else
                 {
@@ -1445,6 +1613,15 @@ public partial class FenetrePrincipale : Window
             if (RecevoirLigneDUnTravail(travail, ligne)) montrer();
         }
 
+        if (_refusFabriques > 0)
+        {
+            // Essai de la pause : ce lancement ne part pas, il reçoit la ligne que yt-dlp écrit quand YouTube refuse.
+            _refusFabriques--;
+            await Task.Delay(400);
+            Lire("ERROR: [youtube] essai: Sign in to confirm you’re not a bot. (refus fabriqué pour l'essai)");
+            return;
+        }
+
         try
         {
             using var processus = new Process { StartInfo = YtDlp.Preparer(executable, arguments) };
@@ -1507,7 +1684,11 @@ public partial class FenetrePrincipale : Window
             return true;
         }
 
-        if (ligne.Contains(MarqueDuBlocage, StringComparison.Ordinal)) NoterUnRefusDeYoutube();
+        if (EstUnRefusDeYoutube(ligne))
+        {
+            travail.Refuse = true;
+            _refusDeYoutube++;
+        }
         if (ligne.EndsWith("has already been downloaded", StringComparison.Ordinal)) travail.DejaLa = true;
         else if (EtapesDeFfmpeg.Any(etape => ligne.StartsWith(etape, StringComparison.Ordinal))) travail.Element.Etat = "assemblage";
 
@@ -1562,7 +1743,7 @@ public partial class FenetrePrincipale : Window
         {
             BarreProgression.IsIndeterminate = false;
             BarreProgression.Visibility = Visibility.Collapsed;
-            Terminer("BLOQUÉ", MessageDuBlocage, Ton.Erreur);
+            Terminer("BLOQUÉ", MessageApresLesAttentes, Ton.Erreur);
         }
         else if (_annulationDemandee)
         {
@@ -2626,7 +2807,7 @@ public partial class FenetrePrincipale : Window
         {
             // Pour un lien Spotify, une erreur sur un résultat de recherche n'est pas l'échec du morceau, un autre résultat peut convenir.
             if (!_listeMaitrisee) MarquerLElementCourant("erreur");
-            if (ligne.Contains(MarqueDuBlocage, StringComparison.Ordinal)) NoterUnRefusDeYoutube();
+            if (EstUnRefusDeYoutube(ligne)) _refusDeYoutube++;
         }
         else if (ligne.Contains(YtDlp.MarqueDImageEcartee, StringComparison.Ordinal))
         {

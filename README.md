@@ -50,7 +50,13 @@ La page publique de Spotify ne montre que les 100 premiers titres d'une playlist
 
 ## Si YouTube bloque
 
-Après beaucoup de demandes depuis la même connexion, YouTube peut refuser de répondre pendant quelques heures. L'application le reconnaît, s'arrête et affiche « BLOQUÉ ». Attendre, puis reprendre avec moins de téléchargements à la fois (3 à 5).
+Après beaucoup de demandes depuis la même connexion, YouTube peut refuser de répondre, de quelques minutes à quelques heures.
+
+Une liste (album, playlist, plusieurs liens) ne s'arrête plus pour autant. Elle se met en pause, 5 minutes, puis 15, 30, puis une heure si le refus dure. À la fin de chaque pause elle envoie un seul morceau pour voir si YouTube répond, et repart alors au ralenti, deux à la fois. Les morceaux refusés sont repris, ils ne sont pas comptés introuvables. Annuler reste possible à tout moment. Après six pauses sans réponse, près de quatre heures, elle affiche « BLOQUÉ », et le bouton de reprise relancera le reste plus tard.
+
+Pour une vidéo seule, l'application affiche « BLOQUÉ » tout de suite. Attendre, puis réessayer.
+
+Insister ne sert à rien et prolonge le refus. L'application ne cherche pas à le contourner, elle attend.
 
 ## Installation
 
@@ -63,11 +69,11 @@ Windows 10 ou 11, 64 bits.
 
 ## Installation sous Linux (Debian, Ubuntu)
 
-1. Télécharger `download-everything_1.2.1_amd64.deb` depuis la page [Releases](../../releases).
+1. Télécharger `download-everything_1.2.2_amd64.deb` depuis la page [Releases](../../releases).
 2. L'installer, ce qui amène aussi ce dont il a besoin (ffmpeg, aria2, les bibliothèques graphiques) :
 
 ```
-sudo apt install ./download-everything_1.2.1_amd64.deb
+sudo apt install ./download-everything_1.2.2_amd64.deb
 ```
 
 L'application apparaît dans le menu sous le nom « Download Everything ». À la première ouverture elle télécharge yt-dlp, Deno et gallery-dl depuis leurs dépôts officiels, empreinte contrôlée, et les range dans `~/.local/share/download-everything`. Il faut donc être connecté à Internet ce jour-là.
