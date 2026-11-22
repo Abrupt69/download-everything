@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Download Everything
+GenericName=Téléchargeur
+Comment=Télécharger vidéos, musique, images et torrents depuis une adresse
+Exec=download-everything %U
+Icon=download-everything
+Terminal=false
+Categories=Network;FileTransfer;AudioVideo;
+MimeType=x-scheme-handler/magnet;application/x-bittorrent;
+StartupWMClass=download-everything

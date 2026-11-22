@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Version Linux de Download Everything. L'interface est refaite avec Avalonia, WPF n'existant que sous
+       Windows. Le moteur (cascade des outils, catalogues de musique, torrents) est celui de la version Windows,
+       repris par lien depuis le dossier parent. Le symbole PORTABLE y retire ce qui est propre à Windows. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>download-everything</AssemblyName>
+    <RootNamespace>YtDlpInterface</RootNamespace>
+    <Product>Download Everything</Product>
+    <Version>1.2.0</Version>
+    <DefineConstants>$(DefineConstants);PORTABLE</DefineConstants>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Les textes sont en français, aucune autre langue n'est embarquée. -->
+    <SatelliteResourceLanguages>fr</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.6" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.6" />
+    <!-- Seulement pour que le chiffrement Windows du jeton Spotify compile. Sous Linux il n'est jamais appelé. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+
+  <!-- Le moteur, commun aux deux versions. Une seule source : une correction profite aux deux. -->
+  <ItemGroup>
+    <Compile Include="..\YtDlp.cs" Link="Moteur\YtDlp.cs" />
+    <Compile Include="..\SpotDl.cs" Link="Moteur\SpotDl.cs" />
+    <Compile Include="..\PageSpotify.cs" Link="Moteur\PageSpotify.cs" />
+    <Compile Include="..\CompteSpotify.cs" Link="Moteur\CompteSpotify.cs" />
+    <Compile Include="..\AutresCatalogues.cs" Link="Moteur\AutresCatalogues.cs" />
+    <Compile Include="..\GalleryDl.cs" Link="Moteur\GalleryDl.cs" />
+    <Compile Include="..\FichierDirect.cs" Link="Moteur\FichierDirect.cs" />
+    <Compile Include="..\Aria2.cs" Link="Moteur\Aria2.cs" />
+    <Compile Include="..\MiseAJourDesOutils.cs" Link="Moteur\MiseAJourDesOutils.cs" />
+    <Compile Include="..\VersionDeLApplication.cs" Link="Moteur\VersionDeLApplication.cs" />
+    <Compile Include="..\ArbreDeProcessus.cs" Link="Moteur\ArbreDeProcessus.cs" />
+    <Compile Include="..\LignesDeTorrents.cs" Link="Moteur\LignesDeTorrents.cs" />
+    <!-- Le code des deux vues, commun lui aussi. Leur dessin, lui, est propre à chaque version (.xaml ici, .axaml là). -->
+    <Compile Include="..\FenetrePrincipale.xaml.cs" Link="FenetrePrincipale.axaml.cs" DependentUpon="FenetrePrincipale.axaml" />
+    <Compile Include="..\VueTorrents.xaml.cs" Link="VueTorrents.axaml.cs" DependentUpon="VueTorrents.axaml" />
+  </ItemGroup>
+
+</Project>

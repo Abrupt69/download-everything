@@ -273,14 +273,28 @@ internal static class CompteSpotify
 
     // Le jeton de renouvellement est chiffré par Windows pour le compte de l'utilisateur.
     // Recopié sur un autre PC ou lu depuis une autre session, le fichier des réglages ne permet pas de s'en servir.
+#if PORTABLE
+    // Linux n'a pas d'équivalent au chiffrement de Windows lié au compte. Le jeton est gardé tel quel, dans le
+    // fichier des réglages que seul son propriétaire peut lire (voir Reglages.Ecrire).
+    private const string EnClair = "clair:";
+
+    private static string Chiffrer(string texte) => OperatingSystem.IsWindows()
+        ? Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(texte), null, DataProtectionScope.CurrentUser))
+        : EnClair + Convert.ToBase64String(Encoding.UTF8.GetBytes(texte));
+#else
     private static string Chiffrer(string texte) =>
         Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(texte), null, DataProtectionScope.CurrentUser));
+#endif
 
     private static string? Dechiffrer(string chiffre)
     {
         if (chiffre.Length == 0) return null;
         try
         {
+#if PORTABLE
+            if (!OperatingSystem.IsWindows())
+                return chiffre.StartsWith(EnClair, StringComparison.Ordinal) ? Encoding.UTF8.GetString(Convert.FromBase64String(chiffre[EnClair.Length..])) : null;
+#endif
             return Encoding.UTF8.GetString(ProtectedData.Unprotect(Convert.FromBase64String(chiffre), null, DataProtectionScope.CurrentUser));
         }
         catch (Exception e) when (e is CryptographicException or FormatException)

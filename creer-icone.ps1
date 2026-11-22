@@ -2,8 +2,9 @@
 # pour rester nette du bureau à la barre des tâches.
 # Le dessin réunit deux signes en un seul trait : une flèche de téléchargement dont la pointe est une coche.
 # Le trait descend, puis remonte à droite plus haut qu'à gauche, comme le « c'est fait » d'une case cochée.
-# À relancer seulement si on veut changer le dessin.  pwsh -File creer-icone.ps1 [-Apercu fichier.png]
-param([string]$Apercu)
+# À relancer seulement si on veut changer le dessin.  pwsh -File creer-icone.ps1 [-Apercu fichier.png] [-Png dossier]
+# -Png écrit le même dessin en fichiers PNG (48, 64, 128 et 256 pixels), pour le paquet Linux, sans toucher à icone.ico.
+param([string]$Apercu, [string]$Png)
 Add-Type -AssemblyName System.Drawing
 
 # Le dessin en 16 pixels, celui de la barre des tâches. À cette taille un trait réduit bave, chaque pixel
@@ -91,6 +92,16 @@ if ($Apercu) {
     }
     $g.Dispose(); $planche.Save($Apercu, [System.Drawing.Imaging.ImageFormat]::Png); $planche.Dispose()
     "Aperçu écrit : $Apercu"
+    return
+}
+
+if ($Png) {
+    # Les tailles que le menu des bureaux Linux va chercher, une image par taille.
+    New-Item -ItemType Directory -Force $Png | Out-Null
+    foreach ($t in 48, 64, 128, 256) {
+        [System.IO.File]::WriteAllBytes((Join-Path $Png "icone-$t.png"), (New-ImagePng $t))
+    }
+    "Icônes PNG écrites dans $Png"
     return
 }
 

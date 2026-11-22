@@ -93,11 +93,50 @@ try {
     Copy-Item "$tmp2\spotdl.exe" (Join-Path $charge 'spotdl.exe') -Force
 } finally { Remove-Item -LiteralPath $tmp2 -Recurse -Force -ErrorAction SilentlyContinue }
 
+# gallery-dl, pour les images et les galeries. Son auteur a déplacé le projet sur Codeberg, c'est là que
+# l'exécutable est publié, avec un fichier SHA256SUMS. Le dépôt GitHub n'est plus qu'un miroir sans fichiers joints.
+$galerie = Invoke-RestMethod 'https://codeberg.org/api/v1/repos/mikf/gallery-dl/releases/latest' -Headers $h
+"gallery-dl $($galerie.tag_name)"
+$tmp3 = Join-Path ([IO.Path]::GetTempPath()) ("charge-gallery-dl-" + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force $tmp3 | Out-Null
+try {
+    $piece = $galerie.assets | Where-Object name -eq 'gallery-dl.exe'
+    $sommes = $galerie.assets | Where-Object name -eq 'SHA256SUMS'
+    foreach ($p in $piece, $sommes) {
+        if ($p.browser_download_url -notlike 'https://codeberg.org/mikf/gallery-dl/releases/download/*') { throw 'Adresse de gallery-dl inattendue.' }
+    }
+    Invoke-WebRequest -Uri $piece.browser_download_url -OutFile "$tmp3\gallery-dl.exe" -Headers $h
+    Confirm-Empreinte "$tmp3\gallery-dl.exe" (Get-EmpreinteDeListe (Get-Texte $sommes.browser_download_url) 'gallery-dl.exe') 'gallery-dl.exe'
+    Copy-Item "$tmp3\gallery-dl.exe" (Join-Path $charge 'gallery-dl.exe') -Force
+} finally { Remove-Item -LiteralPath $tmp3 -Recurse -Force -ErrorAction SilentlyContinue }
+
+# aria2, pour les torrents et les liens magnet. Sa dernière version date de novembre 2023 et son dépôt ne publie
+# aucune empreinte. Celle-ci a été relevée le 22/11/2026 sur l'archive du dépôt officiel, puis recoupée avec deux
+# registres tenus par d'autres (Scoop et winget de Microsoft), qui donnent la même. Elle est donc fixée ici :
+# si l'archive servie un jour à cette adresse diffère, le script s'arrête.
+$aria2Nom = 'aria2-1.37.0-win-64bit-build1.zip'
+$aria2Empreinte = '67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288'
+"aria2 1.37.0"
+$tmp4 = Join-Path ([IO.Path]::GetTempPath()) ("charge-aria2-" + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Force $tmp4 | Out-Null
+try {
+    Invoke-WebRequest -Uri "https://github.com/aria2/aria2/releases/download/release-1.37.0/$aria2Nom" -OutFile "$tmp4\$aria2Nom" -Headers $h
+    Confirm-Empreinte "$tmp4\$aria2Nom" $aria2Empreinte $aria2Nom
+    $archive = [IO.Compression.ZipFile]::OpenRead("$tmp4\$aria2Nom")
+    try {
+        foreach ($entree in $archive.Entries) {
+            $cible = switch ($entree.Name) { 'aria2c.exe' { 'aria2c.exe' } 'COPYING' { 'LICENCE-aria2.txt' } default { $null } }
+            if ($cible) { [IO.Compression.ZipFileExtensions]::ExtractToFile($entree, (Join-Path $charge $cible), $true) }
+        }
+    } finally { $archive.Dispose() }
+} finally { Remove-Item -LiteralPath $tmp4 -Recurse -Force -ErrorAction SilentlyContinue }
+
 # Versions embarquées, au format que lit le bouton « Tout mettre à jour » : la date de l'archive pour ffmpeg
-# (son dépôt republie la même étiquette à chaque construction), le numéro pour Deno et pour spotDL.
+# (son dépôt republie la même étiquette à chaque construction), le numéro pour Deno, spotDL et gallery-dl.
+# aria2 n'y figure pas, sa version est fixée ci-dessus.
 $ffmpeg = (Get-Version 'yt-dlp/FFmpeg-Builds').assets | Where-Object name -eq 'ffmpeg-master-latest-win64-gpl-shared.zip'
 $deno = (Get-Version 'denoland/deno').tag_name
-@("ffmpeg=$($ffmpeg.updated_at.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))", "deno=$deno", "spotdl=$($spotdl.tag_name)") | Set-Content (Join-Path $charge 'versions.txt') -Encoding utf8
+@("ffmpeg=$($ffmpeg.updated_at.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))", "deno=$deno", "spotdl=$($spotdl.tag_name)", "gallery-dl=$($galerie.tag_name)") | Set-Content (Join-Path $charge 'versions.txt') -Encoding utf8
 
 "--- Contenu de $charge"
 Get-ChildItem $charge | ForEach-Object { "{0,-28} {1,8:N1} Mo" -f $_.Name, ($_.Length / 1MB) }

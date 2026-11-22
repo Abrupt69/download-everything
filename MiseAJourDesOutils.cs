@@ -9,7 +9,8 @@ using System.Text.RegularExpressions;
 namespace YtDlpInterface;
 
 /// <summary>
-/// Met à jour ffmpeg, Deno et spotDL depuis leurs dépôts officiels sur GitHub. yt-dlp, lui, sait se mettre à jour seul.
+/// Met à jour ffmpeg, Deno et spotDL depuis leurs dépôts officiels sur GitHub, et gallery-dl depuis le sien
+/// sur Codeberg. yt-dlp, lui, sait se mettre à jour seul.
 /// Rien n'est remplacé tant que l'archive reçue n'a pas l'empreinte SHA-256 que le dépôt publie pour elle.
 /// </summary>
 internal static partial class MiseAJourDesOutils
@@ -23,6 +24,9 @@ internal static partial class MiseAJourDesOutils
     private const string DepotSpotDl = "spotDL/spotify-downloader";
     private const string ArchiveFfmpeg = "ffmpeg-master-latest-win64-gpl-shared.zip";
     private const string ArchiveDeno = "deno-x86_64-pc-windows-msvc.zip";
+    // gallery-dl a quitté GitHub pour Codeberg, où son auteur publie l'exécutable et un fichier SHA256SUMS.
+    private const string DepotGalleryDl = "mikf/gallery-dl";
+    private const string Codeberg = "https://codeberg.org";
 
     private static string FichierVersions => Path.Combine(YtDlp.DossierOutils, "versions.txt");
     private static string DossierDeTravail => Path.Combine(YtDlp.DossierOutils, "mise-a-jour");
@@ -175,6 +179,33 @@ internal static partial class MiseAJourDesOutils
         return $"spotDL mis à jour (version {numero.TrimStart('v')}).";
     }
 
+    /// <summary>Met à jour gallery-dl. Rend une phrase qui dit ce qui a été fait.</summary>
+    public static async Task<string> GalleryDlAsync(HttpClient client, IProgress<Avancement> avancement, CancellationToken arret)
+    {
+        // Codeberg (logiciel Forgejo) répond dans la même forme que GitHub : étiquette, puis pièces avec nom, taille et adresse.
+        using var reponse = await client.GetAsync($"{Codeberg}/api/v1/repos/{DepotGalleryDl}/releases/latest", arret);
+        reponse.EnsureSuccessStatusCode();
+        using var version = JsonDocument.Parse(await reponse.Content.ReadAsStringAsync(arret));
+        var numero = version.RootElement.GetProperty("tag_name").GetString() ?? "";
+        if (LireVersions().GetValueOrDefault("gallery-dl") == numero && File.Exists(Path.Combine(YtDlp.DossierOutils, GalleryDl.NomExecutable)))
+            return "gallery-dl est déjà à jour.";
+
+        var recu = await TelechargerAsync(client, Piece(version, GalleryDl.NomExecutable), DepotGalleryDl, "gallery-dl", avancement, arret, Codeberg);
+        // Une ligne « empreinte  nom » par fichier. Le nom est comparé en entier, gallery-dl_x86.exe ne doit pas passer pour l'autre.
+        var sommes = await client.GetStringAsync(Adresse(Piece(version, "SHA256SUMS"), DepotGalleryDl, Codeberg), arret);
+        var ligne = sommes.Split('\n').FirstOrDefault(l =>
+            l.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries) is [_, var nom] && nom.TrimStart('*') == GalleryDl.NomExecutable) ?? "";
+        await VerifierAsync(recu, Empreinte().Match(ligne).Value, "gallery-dl", arret);
+
+        arret.ThrowIfCancellationRequested();
+        File.Move(recu, Path.Combine(YtDlp.DossierOutils, GalleryDl.NomExecutable), overwrite: true);
+#if PORTABLE
+        Plateforme.RendreExecutable(Path.Combine(YtDlp.DossierOutils, GalleryDl.NomExecutable));
+#endif
+        NoterVersion("gallery-dl", numero);
+        return $"gallery-dl mis à jour (version {numero.TrimStart('v')}).";
+    }
+
     public static void Nettoyer()
     {
         try
@@ -205,20 +236,21 @@ internal static partial class MiseAJourDesOutils
         throw new InvalidDataException($"Le fichier {nom} est absent de la dernière version publiée.");
     }
 
-    private static string Adresse(JsonElement piece, string depot)
+    private static string Adresse(JsonElement piece, string depot, string site = "https://github.com")
     {
         var adresse = piece.GetProperty("browser_download_url").GetString() ?? "";
-        if (!adresse.StartsWith($"https://github.com/{depot}/releases/download/", StringComparison.Ordinal))
+        if (!adresse.StartsWith($"{site}/{depot}/releases/download/", StringComparison.Ordinal))
             throw new InvalidDataException($"Adresse de téléchargement inattendue, refusée. {adresse}");
         return adresse;
     }
 
     private static async Task<string> TelechargerAsync(
-        HttpClient client, JsonElement piece, string depot, string quoi, IProgress<Avancement> avancement, CancellationToken arret)
+        HttpClient client, JsonElement piece, string depot, string quoi, IProgress<Avancement> avancement, CancellationToken arret,
+        string site = "https://github.com")
     {
         Directory.CreateDirectory(DossierDeTravail);
         var cible = Path.Combine(DossierDeTravail, quoi.ToLowerInvariant() + ".zip");
-        using var reponse = await client.GetAsync(Adresse(piece, depot), HttpCompletionOption.ResponseHeadersRead, arret);
+        using var reponse = await client.GetAsync(Adresse(piece, depot, site), HttpCompletionOption.ResponseHeadersRead, arret);
         reponse.EnsureSuccessStatusCode();
         var total = reponse.Content.Headers.ContentLength ?? piece.GetProperty("size").GetInt64();
 

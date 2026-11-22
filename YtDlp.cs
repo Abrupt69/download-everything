@@ -30,7 +30,12 @@ internal sealed record Complements(string? Ffmpeg, string? Deno);
 /// </summary>
 internal static class YtDlp
 {
+#if PORTABLE
+    // Version portable (Linux) : le fichier s'appelle « yt-dlp », sans extension.
+    public static string NomExecutable => Plateforme.Outil("yt-dlp");
+#else
     public const string NomExecutable = "yt-dlp.exe";
+#endif
     public const string PageOfficielle = "https://github.com/yt-dlp/yt-dlp/releases/latest";
 
     /// <summary>Valeur vide, yt-dlp garde le fichier tel que le site le fournit, sans conversion.</summary>
@@ -145,7 +150,16 @@ internal static class YtDlp
         // version dans une copie à part, avec ses propres outils et réglages, sans gêner une application déjà ouverte.
         Environment.GetEnvironmentVariable("DOWNLOAD_EVERYTHING_DOSSIER") is { Length: > 0 } ailleurs && Path.IsPathFullyQualified(ailleurs)
             ? ailleurs
+#if PORTABLE
+            // Sous Linux, ~/.local/share/download-everything, en minuscules et sans espace comme le veut l'usage.
+            // « DoNotVerify » : sur un compte tout neuf ~/.local/share n'existe pas encore, et sans cette option .NET
+            // rend alors un chemin vide, qui ferait travailler l'application dans le dossier courant (mesuré le 22/11/2026).
+            : Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.DoNotVerify),
+                Plateforme.Windows ? "Download Everything" : "download-everything");
+#else
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Download Everything");
+#endif
 
     /// <summary>Marque en tête des lignes de mesure que yt-dlp écrit pour l'interface, voir le gabarit ci-dessous.</summary>
     public const string MarqueDeMesure = "DE|";
@@ -173,7 +187,13 @@ internal static class YtDlp
     /// Deno exécute le code JavaScript dont YouTube a besoin pour donner ses adresses de vidéo.
     /// Sans eux l'interface marche encore, avec moins de choix.
     /// </summary>
+#if PORTABLE
+    // Sous Linux ffmpeg vient du système, installé avec le paquet. Deno est déposé dans le dossier des outils.
+    public static Complements TrouverComplements() => new(
+        DansLesOutils(Plateforme.Outil("ffmpeg")) ?? Plateforme.DansLeSysteme("ffmpeg"), DansLesOutils(Plateforme.Outil("deno")));
+#else
     public static Complements TrouverComplements() => new(DansLesOutils("ffmpeg.exe"), DansLesOutils("deno.exe"));
+#endif
 
     private static string? DansLesOutils(string nom)
     {
@@ -189,8 +209,9 @@ internal static class YtDlp
     {
         // Un collage ramène parfois plusieurs lignes, seule la première compte.
         adresse = (texte ?? "").Trim().Split('\r', '\n')[0].Trim();
+        // Les adresses web, et les torrents sous leurs deux autres formes (lien magnet, fichier .torrent du PC).
         return Uri.TryCreate(adresse, UriKind.Absolute, out var uri)
-               && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+               && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps || Aria2.EstUnTorrent(adresse));
     }
 
     /// <summary>
@@ -211,6 +232,14 @@ internal static class YtDlp
     /// Fichier où yt-dlp note le chemin du fichier terminé. Chaque téléchargement mené en parallèle a le sien,
     /// sinon ils écriraient tous au même endroit.
     /// </param>
+    /// <summary>Ce que yt-dlp écrit quand le filtre écarte ce qu'il a trouvé à l'adresse, image ou document.</summary>
+    public const string MarqueDImageEcartee = "does not pass filter (ext!~=";
+
+    // Extensions de ce qui n'est ni vidéo ni son : les images, puis les documents, archives et programmes.
+    private const string ExtensionsHorsMedia =
+        "jpe?g|png|gif|webp|bmp|avif|heic|tiff?|svg"
+        + "|pdf|zip|rar|7z|gz|bz2|xz|tar|tgz|exe|msi|iso|img|dmg|apk|deb|rpm|jar|docx?|xlsx?|pptx?|odt|ods|epub|mobi|txt|csv|json|xml|html?|torrent|ttf|otf|psd";
+
     public static List<string> ArgumentsTelechargement(Demande demande, Complements complements, string? trace = null)
     {
         var arguments = new List<string>
@@ -225,6 +254,10 @@ internal static class YtDlp
             // Une adresse qui désigne à la fois une vidéo et sa playlist ne donne que la vidéo.
             // Les playlists entières sont menées par l'application, une vidéo par lancement.
             "--no-playlist",
+            // Une image ou un document n'est pas une vidéo. Sans ce filtre yt-dlp les télécharge quand même, puis
+            // tente de les convertir (une image devient un MP4 d'une seule image, un PDF finit en erreur). Écartés
+            // ici, ils reviennent aux outils suivants de la cascade, qui les gardent tels qu'ils sont.
+            "--match-filters", "ext!~='^(" + ExtensionsHorsMedia + ")$'",
             "-P", demande.Dossier,
             "-o", ModeleDeNom(demande),
             // Les caractères interdits dans un nom de fichier deviennent des caractères simples (tiret, souligné),
@@ -453,6 +486,28 @@ internal static class YtDlp
         return extension is null
             ? null
             : Path.Combine(dossier, NomDuMorceauEnClair(morceau, dansUnSousDossier).Replace('/', Path.DirectorySeparatorChar) + "." + extension);
+    }
+
+    /// <summary>
+    /// yt-dlp pose la jaquette à côté du futur fichier avant de commencer le transfert, puis l'incruste et
+    /// l'efface. Si le transfert échoue, elle reste seule dans le dossier. On la retire, à condition que le
+    /// fichier attendu n'existe pas : jamais une image n'est effacée à côté d'un morceau bien arrivé.
+    /// </summary>
+    public static void EffacerLaJaquetteOrpheline(string? cheminAttendu)
+    {
+        if (cheminAttendu is null) return;
+        try
+        {
+            if (File.Exists(cheminAttendu)) return;
+            // Le chemin finit toujours par l'extension du format, un point dans le titre ne trompe donc pas ce retrait.
+            var sansExtension = cheminAttendu[..^Path.GetExtension(cheminAttendu).Length];
+            foreach (var extension in new[] { ".jpg", ".jpeg", ".webp", ".png" })
+                File.Delete(sansExtension + extension);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            // Une image de quelques dizaines de ko qui reste n'empêche rien.
+        }
     }
 
     // Le rang en tête d'un fichier de liste, « 007 - ».
@@ -689,6 +744,10 @@ internal static class Reglages
             reglages[cle] = valeur;
             Directory.CreateDirectory(YtDlp.DossierOutils);
             File.WriteAllLines(Fichier, reglages.Select(r => $"{r.Key}={r.Value}"));
+#if PORTABLE
+            // Sous Linux le jeton Spotify n'est pas chiffré par le système : le fichier n'est lisible que par son propriétaire.
+            Plateforme.ReserverAuProprietaire(Fichier);
+#endif
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

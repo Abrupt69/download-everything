@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>YtDlpInterface</RootNamespace>
     <AssemblyName>DownloadEverything</AssemblyName>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Product>Download Everything</Product>
     <AssemblyTitle>Download Everything</AssemblyTitle>
     <Description>Interface graphique pour yt-dlp, avec ffmpeg et Deno embarqués</Description>
@@ -36,6 +36,10 @@
     <ProjectReference Include="Charge\Charge.csproj" />
     <!-- Le sous-dossier Charge est un projet à lui seul, ses fichiers ne font pas partie de celui-ci. -->
     <Compile Remove="Charge\**" />
+    <!-- La version Linux (Avalonia) a son propre projet dans linux\, elle reprend les fichiers du moteur par lien. -->
+    <Compile Remove="linux\**" />
+    <None Remove="linux\**" />
+    <EmbeddedResource Remove="linux\**" />
     <EmbeddedResource Remove="Charge\**" />
     <None Remove="Charge\**" />
     <Page Remove="Charge\**" />

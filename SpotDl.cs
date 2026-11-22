@@ -24,7 +24,11 @@ internal static class SpotDl
     /// <summary>Chemin de spotdl.exe dans le dossier des outils, ou null s'il manque.</summary>
     public static string? Trouver()
     {
+#if PORTABLE
+        var chemin = Path.Combine(YtDlp.DossierOutils, Plateforme.Outil("spotdl"));
+#else
         var chemin = Path.Combine(YtDlp.DossierOutils, "spotdl.exe");
+#endif
         return File.Exists(chemin) ? chemin : null;
     }
 

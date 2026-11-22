@@ -1,0 +1,19 @@
+Package: download-everything
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: amd64
+Maintainer: Abrupt69 <abrupt69@users.noreply.github.com>
+Installed-Size: @TAILLE@
+Depends: libc6, libgcc-s1, libstdc++6, zlib1g, libicu78 | libicu77 | libicu76 | libicu75 | libicu74 | libicu72 | libicu71 | libicu70 | libicu67 | libicu66, libx11-6, libice6, libsm6, libfontconfig1, libfreetype6, ca-certificates, ffmpeg, aria2
+Recommends: xdg-utils
+Homepage: https://github.com/Abrupt69/download-everything
+Description: Télécharger vidéos, musique, images et torrents depuis une adresse
+ Download Everything est une fenêtre simple. On colle une adresse, on choisit
+ le format, on télécharge. Elle confie l'adresse à l'outil qui sait la lire :
+ yt-dlp pour la vidéo et le son, gallery-dl pour les images, aria2 pour les
+ torrents, et prend tel quel un simple fichier (PDF, archive).
+ .
+ yt-dlp, Deno et gallery-dl sont pris à leurs dépôts officiels à la première
+ ouverture, empreinte contrôlée, et rangés dans le dossier de l'utilisateur.
+ ffmpeg et aria2 sont ceux du système.

@@ -17,6 +17,17 @@ internal static partial class ArbreDeProcessus
         {
             if (racine.HasExited) return;
 
+#if PORTABLE
+            if (!OperatingSystem.IsWindows())
+            {
+                // Sous Linux : le signal d'arrêt ordinaire d'abord, que le lanceur transmet à yt-dlp et qui lui laisse
+                // faire son ménage, puis l'arrêt ferme de tout l'arbre s'il tarde.
+                _ = kill(racine.Id, 15);
+                if (!racine.WaitForExit(delaiDeMenageMs)) racine.Kill(entireProcessTree: true);
+                return;
+            }
+#endif
+
             foreach (var identifiant in Descendants(racine.Id))
             {
                 try
@@ -38,6 +49,11 @@ internal static partial class ArbreDeProcessus
             // Le processus s'est terminé entre-temps, il n'y a plus rien à arrêter.
         }
     }
+
+#if PORTABLE
+    [DllImport("libc", SetLastError = true)]
+    private static extern int kill(int processus, int signal);
+#endif
 
     /// <summary>Tous les descendants d'un processus, enfants d'abord, lus dans un instantané du système.</summary>
     private static List<int> Descendants(int racine)

@@ -1,0 +1,484 @@
+<!-- Fenêtre de Download Everything pour Linux, dessinée avec Avalonia.
+     Même direction « Panneau avant » que la version Windows : une colonne d'étiquettes en capitales à gauche,
+     les commandes alignées à droite, des filets d'un pixel, graphite neutre, angles à 2 px, aucun pictogramme,
+     une seule couleur signal (l'ambre). Les éléments portent les mêmes noms que dans la version Windows,
+     parce que le code de la fenêtre (FenetrePrincipale.xaml.cs, dans le dossier parent) est commun aux deux. -->
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="YtDlpInterface.FenetrePrincipale"
+        Title="Download Everything"
+        Width="900" SizeToContent="Height" CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource Fond}" Foreground="{DynamicResource Texte}" FontSize="14"
+        Activated="RegarderLePressePapiers">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="Fond" Color="#141414"/>
+        <SolidColorBrush x:Key="Champ" Color="#1B1B1B"/>
+        <SolidColorBrush x:Key="Survol" Color="#222222"/>
+        <SolidColorBrush x:Key="FondJournal" Color="#0F0F0F"/>
+        <SolidColorBrush x:Key="Filet" Color="#2E2E2E"/>
+        <SolidColorBrush x:Key="Contour" Color="#767676"/>
+        <SolidColorBrush x:Key="Texte" Color="#EDEDED"/>
+        <SolidColorBrush x:Key="TexteDoux" Color="#A3A3A3"/>
+        <SolidColorBrush x:Key="TexteEtiquette" Color="#8A8A8A"/>
+        <SolidColorBrush x:Key="TexteInactif" Color="#5C5C5C"/>
+        <SolidColorBrush x:Key="Signal" Color="#FFB000"/>
+        <SolidColorBrush x:Key="Reussite" Color="#5FD38D"/>
+        <SolidColorBrush x:Key="Alerte" Color="#FF6B5E"/>
+
+        <!-- Couleurs que le thème d'Avalonia donne aux champs et aux listes selon leur état, ramenées à la palette :
+             un champ qui a le clavier garde son fond et prend un contour ambre, au lieu de passer au noir. -->
+        <SolidColorBrush x:Key="TextControlBackgroundPointerOver" Color="#1B1B1B"/>
+        <SolidColorBrush x:Key="TextControlBackgroundFocused" Color="#1B1B1B"/>
+        <SolidColorBrush x:Key="TextControlBorderBrushPointerOver" Color="#767676"/>
+        <SolidColorBrush x:Key="TextControlBorderBrushFocused" Color="#FFB000"/>
+        <SolidColorBrush x:Key="TextControlForegroundFocused" Color="#EDEDED"/>
+        <SolidColorBrush x:Key="TextControlForegroundPointerOver" Color="#EDEDED"/>
+        <SolidColorBrush x:Key="TextControlPlaceholderForeground" Color="#8A8A8A"/>
+        <SolidColorBrush x:Key="TextControlPlaceholderForegroundFocused" Color="#8A8A8A"/>
+        <SolidColorBrush x:Key="TextControlPlaceholderForegroundPointerOver" Color="#8A8A8A"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundPointerOver" Color="#222222"/>
+        <SolidColorBrush x:Key="ComboBoxBackgroundPressed" Color="#1B1B1B"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPointerOver" Color="#767676"/>
+        <SolidColorBrush x:Key="ComboBoxBorderBrushPressed" Color="#767676"/>
+        <SolidColorBrush x:Key="ComboBoxDropDownBackground" Color="#1B1B1B"/>
+        <SolidColorBrush x:Key="ComboBoxDropDownBorderBrush" Color="#767676"/>
+    </Window.Resources>
+
+    <Window.Styles>
+        <!-- Étiquette de ligne, en capitales. -->
+        <Style Selector="TextBlock.etiquette">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="LetterSpacing" Value="0.4"/>
+            <Setter Property="Foreground" Value="{DynamicResource TexteEtiquette}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <!-- Valeur d'une mesure, sous son étiquette, en chiffres à chasse fixe. -->
+        <Style Selector="TextBlock.mesure">
+            <Setter Property="FontSize" Value="15"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="FontFeatures" Value="tnum"/>
+            <Setter Property="Margin" Value="0,4,8,0"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="Text" Value="—"/>
+        </Style>
+        <!-- Ligne du panneau : un filet dessous, 52 de haut. -->
+        <Style Selector="Border.ligne">
+            <Setter Property="BorderBrush" Value="{DynamicResource Filet}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="MinHeight" Value="52"/>
+        </Style>
+
+        <!-- Bouton principal, le seul élément plein en couleur signal. -->
+        <Style Selector="Button.signal">
+            <Setter Property="Background" Value="{DynamicResource Signal}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fond}"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Width" Value="176"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="Button.signal:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#FFC233"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fond}"/>
+        </Style>
+        <Style Selector="Button.signal:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#E09B00"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fond}"/>
+        </Style>
+        <Style Selector="Button.signal:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Filet}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TexteInactif}"/>
+        </Style>
+
+        <!-- Bouton de texte, sans cadre : l'action secondaire. Vaut aussi pour les bascules. -->
+        <Style Selector=":is(Button).texte">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource Texte}"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector=":is(Button).texte.doux">
+            <Setter Property="Foreground" Value="{DynamicResource TexteDoux}"/>
+        </Style>
+        <Style Selector=":is(Button).texte.ambre">
+            <Setter Property="Foreground" Value="{DynamicResource Signal}"/>
+        </Style>
+        <Style Selector=":is(Button).texte:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Survol}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Texte}"/>
+        </Style>
+        <Style Selector=":is(Button).texte:pressed /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Champ}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Texte}"/>
+        </Style>
+        <Style Selector=":is(Button).texte:disabled /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource TexteInactif}"/>
+        </Style>
+        <Style Selector="ToggleButton.texte:checked /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource Texte}"/>
+        </Style>
+
+        <!-- Touche d'un sélecteur à deux positions. La touche enfoncée est claire, l'autre reste en creux. -->
+        <Style Selector="RadioButton.touche">
+            <Setter Property="Foreground" Value="{DynamicResource TexteDoux}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Width" Value="88"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Contour}" BorderThickness="1"
+                            CornerRadius="{TemplateBinding CornerRadius}">
+                        <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="RadioButton.touche:pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource Texte}"/>
+        </Style>
+        <Style Selector="RadioButton.touche:checked">
+            <Setter Property="Background" Value="{DynamicResource Texte}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Fond}"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+        </Style>
+        <Style Selector="RadioButton.gauche">
+            <Setter Property="CornerRadius" Value="2,0,0,2"/>
+        </Style>
+        <Style Selector="RadioButton.droite">
+            <Setter Property="CornerRadius" Value="0,2,2,0"/>
+            <Setter Property="Margin" Value="-1,0,0,0"/>
+        </Style>
+
+        <!-- Champs et listes : fond du panneau, contour gris, angles à 2 px. -->
+        <Style Selector="TextBox">
+            <Setter Property="Background" Value="{DynamicResource Champ}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Contour}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Texte}"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource Champ}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Contour}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Texte}"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="MinHeight" Value="36"/>
+            <Setter Property="Padding" Value="12,0,0,0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="CheckBox">
+            <Setter Property="Foreground" Value="{DynamicResource Texte}"/>
+            <Setter Property="CornerRadius" Value="2"/>
+        </Style>
+
+        <!-- Barre de progression, pleine largeur, sans arrondi. -->
+        <Style Selector="ProgressBar">
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="MinHeight" Value="6"/>
+            <!-- Le thème d'Avalonia impose 200 de large au minimum : une barre de ligne déborderait de sa colonne. -->
+            <Setter Property="MinWidth" Value="0"/>
+            <Setter Property="CornerRadius" Value="0"/>
+            <Setter Property="Background" Value="{DynamicResource Filet}"/>
+            <Setter Property="Foreground" Value="{DynamicResource Signal}"/>
+        </Style>
+        <Style Selector="ProgressBar.fine">
+            <Setter Property="Height" Value="6"/>
+        </Style>
+        <Style Selector="ProgressBar.fini">
+            <Setter Property="Foreground" Value="{DynamicResource Reussite}"/>
+        </Style>
+        <Style Selector="ProgressBar.echec">
+            <Setter Property="Foreground" Value="{DynamicResource Alerte}"/>
+        </Style>
+    </Window.Styles>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="24,8,24,12">
+
+            <!-- Plaque de l'appareil, avec les deux touches qui changent la vue. -->
+            <Border Classes="ligne" MinHeight="44">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                    <TextBlock Text="DOWNLOAD EVERYTHING" FontWeight="Bold" FontSize="14" LetterSpacing="0.3" VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="48,0,0,0" VerticalAlignment="Center">
+                        <RadioButton x:Name="ChoixVueTelechargement" Classes="touche gauche" GroupName="Vue" Content="Téléchargement"
+                                     Width="124" Height="30" FontSize="13" IsChecked="True" IsCheckedChanged="ChangerDeVue"
+                                     AutomationProperties.Name="Vue, téléchargement"/>
+                        <RadioButton x:Name="ChoixVueTorrents" Classes="touche droite" GroupName="Vue" Content="Torrents"
+                                     Width="104" Height="30" FontSize="13" IsCheckedChanged="ChangerDeVue"
+                                     AutomationProperties.Name="Vue, torrents"
+                                     ToolTip.Tip="Liens magnet et fichiers .torrent, avec leurs sources et leurs pairs"/>
+                    </StackPanel>
+                    <TextBlock x:Name="TexteVersionDeLAppli" Grid.Column="3" FontSize="12" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TexteEtiquette}" FontFeatures="tnum"/>
+                    <Button x:Name="BoutonNouvelleVersion" Grid.Column="4" Classes="texte ambre" Height="32" Margin="12,0,-12,0"
+                            IsVisible="False" Click="InstallerLaNouvelleVersion"
+                            ToolTip.Tip="Ouvre la page où se trouve le nouveau paquet"/>
+                </Grid>
+            </Border>
+
+            <!-- Bandeau d'alerte, montré seulement quand un outil manque ou ne répond pas. -->
+            <Border x:Name="Bandeau" IsVisible="False" Padding="0,14" BorderThickness="0,0,0,1" BorderBrush="{DynamicResource Alerte}">
+                <Grid ColumnDefinitions="112,16,*,Auto">
+                    <TextBlock Classes="etiquette" Text="ALERTE" Foreground="{DynamicResource Alerte}" VerticalAlignment="Top" Margin="0,3,0,0"/>
+                    <TextBlock x:Name="TexteBandeau" Grid.Column="2" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                    <Button x:Name="BoutonDossierOutils" Grid.Column="3" Margin="12,0,0,0" VerticalAlignment="Top"
+                            Classes="texte" Content="Ouvrir ce dossier" Click="OuvrirLeDossierDesOutils"/>
+                </Grid>
+            </Border>
+
+            <!-- Vue de téléchargement : tout ce qui suit, jusqu'au pied, se cache quand on passe sur les torrents. -->
+            <StackPanel x:Name="VueTelechargement">
+
+                <!-- SOURCE -->
+                <Border Classes="ligne">
+                    <Grid ColumnDefinitions="112,16,*">
+                        <TextBlock Classes="etiquette" Text="SOURCE"/>
+                        <TextBox x:Name="ChampAdresse" Grid.Column="2" VerticalAlignment="Center"
+                                 PlaceholderText="Une ou plusieurs adresses à coller ici (vidéo, playlist, lien Spotify, image, torrent)"
+                                 AutomationProperties.Name="Adresse de la vidéo">
+                            <TextBox.InnerRightContent>
+                                <Button x:Name="BoutonColler" Classes="texte" Height="32" Padding="16,0" Margin="0,0,1,0"
+                                        Content="_Coller" Click="CollerLAdresse" AutomationProperties.Name="Coller l'adresse"/>
+                            </TextBox.InnerRightContent>
+                        </TextBox>
+                    </Grid>
+                </Border>
+
+                <!-- SORTIE -->
+                <Border Classes="ligne">
+                    <Grid ColumnDefinitions="112,16,Auto,16,*,16,*">
+                        <TextBlock Classes="etiquette" Text="SORTIE"/>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                            <RadioButton x:Name="ChoixVideo" Classes="touche gauche" GroupName="Contenu" Content="Vidéo" IsChecked="True"
+                                         IsCheckedChanged="ChangerDeContenu" AutomationProperties.Name="Contenu, vidéo"/>
+                            <RadioButton x:Name="ChoixAudio" Classes="touche droite" GroupName="Contenu" Content="Audio seul" Width="96"
+                                         IsCheckedChanged="ChangerDeContenu" AutomationProperties.Name="Contenu, audio seul"/>
+                        </StackPanel>
+                        <ComboBox x:Name="ChoixFormat" Grid.Column="4" AutomationProperties.Name="Format"/>
+                        <ComboBox x:Name="ChoixQualite" Grid.Column="6" AutomationProperties.Name="Qualité de l'image"/>
+                    </Grid>
+                </Border>
+
+                <!-- DOSSIER -->
+                <Border x:Name="LigneDossier" Classes="ligne">
+                    <Grid ColumnDefinitions="112,16,Auto,*,Auto,Auto">
+                        <TextBlock Classes="etiquette" Text="DOSSIER"/>
+                        <TextBlock x:Name="NomDossier" Grid.Column="2" VerticalAlignment="Center" MaxWidth="280" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock x:Name="CheminParent" Grid.Column="3" Margin="12,1,12,0" VerticalAlignment="Center" FontSize="12"
+                                   Foreground="{DynamicResource TexteEtiquette}" TextTrimming="CharacterEllipsis"/>
+                        <Button x:Name="BoutonParcourir" Grid.Column="4" Classes="texte" Content="C_hanger" Click="ChoisirLeDossier"/>
+                        <Button x:Name="BoutonOuvrir" Grid.Column="5" Classes="texte" Margin="0,0,-12,0" Content="_Ouvrir" Click="OuvrirLeDossierDeDestination"/>
+                    </Grid>
+                </Border>
+
+                <!-- OPTIONS -->
+                <Border Classes="ligne">
+                    <Grid ColumnDefinitions="112,16,*,Auto,10,84">
+                        <TextBlock Classes="etiquette" Text="OPTIONS"/>
+                        <CheckBox x:Name="ChoixPlaylist" Grid.Column="2" VerticalAlignment="Center" Content="Toute la playlist"
+                                  ToolTip.Tip="Quand l'adresse désigne une vidéo qui fait partie d'une playlist, prendre toute la playlist"/>
+                        <TextBlock Grid.Column="3" Classes="etiquette" Text="À LA FOIS"/>
+                        <ComboBox x:Name="ChoixSimultanes" Grid.Column="5" AutomationProperties.Name="Nombre de téléchargements à la fois"
+                                  ToolTip.Tip="Pour les albums, les playlists et plusieurs liens. Au-delà de 5, YouTube refuse plus souvent des demandes."/>
+                    </Grid>
+                </Border>
+
+                <!-- SON. Deux réglages qui ne valent que pour le son seul : son débit, et un égaliseur. -->
+                <Border Classes="ligne">
+                    <Grid ColumnDefinitions="112,16,Auto,10,*,24,Auto,10,*">
+                        <TextBlock Classes="etiquette" Text="SON"/>
+                        <TextBlock Grid.Column="2" Classes="etiquette" Text="QUALITÉ"/>
+                        <ComboBox x:Name="ChoixQualiteSon" Grid.Column="4" AutomationProperties.Name="Qualité du son"
+                                  ToolTip.Tip="Débit du son converti (MP3, M4A, Opus). La source dépasse rarement 160 kb/s, un débit plus haut grossit le fichier sans l'améliorer."/>
+                        <TextBlock Grid.Column="6" Classes="etiquette" Text="ÉGALISEUR"/>
+                        <ComboBox x:Name="ChoixEgaliseur" Grid.Column="8" AutomationProperties.Name="Égaliseur"
+                                  ToolTip.Tip="Appliqué à chaque son téléchargé en mode Audio seul. Le son est alors réencodé, et le format d'origine devient de l'Opus."/>
+                    </Grid>
+                </Border>
+
+                <!-- Actions, alignées sur la colonne des commandes. Annuler n'apparaît que pendant un travail. -->
+                <Grid Margin="0,24,0,24" ColumnDefinitions="128,Auto,Auto,Auto,*,Auto">
+                    <Button x:Name="BoutonTelecharger" Grid.Column="1" Classes="signal" Content="_Télécharger"
+                            IsDefault="True" Click="Telecharger" AutomationProperties.Name="Télécharger"/>
+                    <Button x:Name="BoutonAnnuler" Grid.Column="2" Classes="texte" Height="40" Padding="16,0" Margin="8,0,0,0"
+                            Content="_Annuler" IsCancel="True" IsVisible="False" Click="Annuler"/>
+                    <Button x:Name="BoutonReprendre" Grid.Column="3" Classes="texte" Height="40" Padding="16,0" Margin="8,0,0,0"
+                            IsVisible="False" Click="ReprendreLesManquants"
+                            ToolTip.Tip="Relance seulement ce qui n'a pas abouti dans la dernière liste, sans relire le lien"/>
+                    <Button x:Name="BoutonMettreAJour" Grid.Column="5" Classes="texte doux" Height="40" Margin="0,0,-12,0"
+                            Content="Tout _mettre à jour" Click="MettreAJour" AutomationProperties.Name="Tout mettre à jour"
+                            ToolTip.Tip="Cherche les dernières versions de yt-dlp, Deno et gallery-dl sur leurs dépôts officiels. ffmpeg et aria2 suivent les mises à jour du système."/>
+                </Grid>
+
+                <!-- ÉTAT. Rien au repos. La colonne de gauche sert d'afficheur : le pourcentage en grand, puis le mot de la fin. -->
+                <Border x:Name="ZoneEtat" IsVisible="False" BorderBrush="{DynamicResource Filet}" BorderThickness="0,1,0,0" MinHeight="64" Padding="0,12">
+                    <Grid ColumnDefinitions="112,16,*">
+                        <TextBlock x:Name="EtiquetteEtat" Classes="etiquette" Text="ÉTAT"/>
+                        <TextBlock x:Name="Afficheur" FontSize="28" FontFeatures="tnum" VerticalAlignment="Center" IsVisible="False"/>
+                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                            <ProgressBar x:Name="BarreProgression" IsVisible="False" Minimum="0" Maximum="100" AutomationProperties.Name="Progression"/>
+
+                            <!-- Mesures du transfert, une étiquette au-dessus de chaque valeur, comme les cadrans d'un appareil. -->
+                            <Grid x:Name="Mesures" Margin="0,14,0,0" IsVisible="False"
+                                  ColumnDefinitions="1.05*,1.6*,0.85*,0.85*,1.25*,1.1*" RowDefinitions="Auto,Auto">
+                                <TextBlock Grid.Column="0" Classes="etiquette" Text="DÉBIT"/>
+                                <TextBlock Grid.Column="1" Classes="etiquette" Text="REÇU"/>
+                                <TextBlock Grid.Column="2" Classes="etiquette" Text="RESTE"/>
+                                <TextBlock Grid.Column="3" Classes="etiquette" Text="ÉCOULÉ"/>
+                                <TextBlock Grid.Column="4" Classes="etiquette" Text="LIAISON"/>
+                                <TextBlock Grid.Column="5" Classes="etiquette" Text="FORMAT"/>
+                                <TextBlock x:Name="MesureDebit" Grid.Row="1" Grid.Column="0" Classes="mesure"/>
+                                <TextBlock x:Name="MesureRecu" Grid.Row="1" Grid.Column="1" Classes="mesure"/>
+                                <TextBlock x:Name="MesureReste" Grid.Row="1" Grid.Column="2" Classes="mesure"/>
+                                <TextBlock x:Name="MesureEcoule" Grid.Row="1" Grid.Column="3" Classes="mesure"/>
+                                <TextBlock x:Name="MesureLiaison" Grid.Row="1" Grid.Column="4" Classes="mesure"/>
+                                <TextBlock x:Name="MesureFormat" Grid.Row="1" Grid.Column="5" Classes="mesure"/>
+                            </Grid>
+
+                            <TextBlock x:Name="TexteEtat" Margin="0,12,0,0" TextWrapping="Wrap" IsVisible="False"
+                                       Foreground="{DynamicResource TexteDoux}"/>
+
+                            <!-- Playlist. La barre du haut donne l'ensemble, cette liste dépliable donne chaque vidéo. -->
+                            <ToggleButton x:Name="BasculeElements" Classes="texte doux" Height="32" Margin="-12,8,0,0"
+                                          HorizontalAlignment="Left" IsVisible="False"
+                                          Content="Afficher le _détail" IsCheckedChanged="BasculerLesElements"/>
+                            <Border x:Name="CadreElements" IsVisible="False" Margin="0,4,0,0" BorderBrush="{DynamicResource Filet}" BorderThickness="0,1,0,0">
+                                <ScrollViewer MaxHeight="192" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl x:Name="Elements">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border BorderBrush="{DynamicResource Filet}" BorderThickness="0,0,0,1" Height="32">
+                                                    <Grid ColumnDefinitions="36,*,160,92">
+                                                        <TextBlock Text="{Binding Numero}" FontFeatures="tnum"
+                                                                   Foreground="{DynamicResource TexteEtiquette}" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Titre}" Margin="0,0,16,0" VerticalAlignment="Center"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                        <ProgressBar Grid.Column="2" Classes="fine" Classes.fini="{Binding Fini}" Classes.echec="{Binding EnEchec}"
+                                                                     Minimum="0" Maximum="100" Value="{Binding Pourcent}" VerticalAlignment="Center"/>
+                                                        <TextBlock Grid.Column="3" Text="{Binding Etat}" Margin="16,0,0,0" FontSize="12.5" FontFeatures="tnum"
+                                                                   Foreground="{DynamicResource TexteDoux}" VerticalAlignment="Center"/>
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- FICHIER. Le nom du fichier obtenu et de quoi le retrouver. -->
+                <Border x:Name="Resultat" IsVisible="False" BorderBrush="{DynamicResource Filet}" BorderThickness="0,1,0,0" MinHeight="52">
+                    <Grid ColumnDefinitions="112,16,*,Auto,Auto">
+                        <TextBlock Classes="etiquette" Text="FICHIER"/>
+                        <TextBlock x:Name="NomFichier" Grid.Column="2" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                        <Button x:Name="BoutonOuvrirFichier" Grid.Column="3" Classes="texte" Margin="12,0,0,0"
+                                Content="Ouvrir le _fichier" Click="OuvrirLeFichier"/>
+                        <Button x:Name="BoutonMontrerFichier" Grid.Column="4" Classes="texte" Margin="0,0,-12,0"
+                                Content="Ouvrir le _dossier" Click="MontrerLeFichier"/>
+                    </Grid>
+                </Border>
+
+                <!-- Journal des outils, replié au repos. Il s'ouvre par le bouton du pied, ou seul en cas d'erreur. -->
+                <ScrollViewer x:Name="Journal" Height="180" IsVisible="False" Background="{DynamicResource FondJournal}"
+                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              AutomationProperties.Name="Journal des outils">
+                    <ItemsControl x:Name="LignesDuJournal" Margin="12,10,12,10">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <SelectableTextBlock Text="{Binding Texte}" Classes.rouge="{Binding Rouge}" TextWrapping="Wrap" FontSize="12" LineHeight="18"
+                                                     FontFamily="Cascadia Mono,Consolas,DejaVu Sans Mono,Liberation Mono,monospace"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                        <ItemsControl.Styles>
+                            <Style Selector="SelectableTextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TexteDoux}"/>
+                            </Style>
+                            <Style Selector="SelectableTextBlock.rouge">
+                                <Setter Property="Foreground" Value="{DynamicResource Alerte}"/>
+                            </Style>
+                        </ItemsControl.Styles>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <!-- Compte Spotify, replié au repos. C'est facultatif, sans connexion tout marche quand même. -->
+                <Border x:Name="ZoneCle" IsVisible="False" BorderBrush="{DynamicResource Filet}" BorderThickness="0,1,0,0" Padding="0,14">
+                    <Grid ColumnDefinitions="112,16,*">
+                        <TextBlock Classes="etiquette" Text="COMPTE SPOTIFY" VerticalAlignment="Top" Margin="0,3,0,0"/>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TexteDoux}" FontSize="13"
+                                       Text="Facultatif. Connecté à votre compte, vos playlists se lisent en entier en quelques secondes, même avec plusieurs centaines de titres. Spotify demande un abonnement Premium et ne laisse lire ainsi que vos propres playlists. Le mot de passe se tape sur la page de Spotify, jamais ici."/>
+                            <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource TexteDoux}" FontSize="13" Margin="0,10,0,0"
+                                       Text="1. Sur le tableau de bord Spotify, créez une application et cochez Web API.  2. Dans Redirect URIs, collez l'adresse de retour ci-dessous.  3. Collez ici le Client ID de l'application, puis connectez-vous."/>
+                            <Grid Margin="0,12,0,0" ColumnDefinitions="*,12,*">
+                                <StackPanel>
+                                    <TextBlock Classes="etiquette" Text="CLIENT ID" Margin="0,0,0,6"/>
+                                    <TextBox x:Name="ChampIdSpotify" MaxLength="64" AutomationProperties.Name="Client ID de l'application Spotify"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Classes="etiquette" Text="ADRESSE DE RETOUR" Margin="0,0,0,6"/>
+                                    <TextBox x:Name="ChampRetourSpotify" IsReadOnly="True" AutomationProperties.Name="Adresse de retour"/>
+                                </StackPanel>
+                            </Grid>
+                            <Grid Margin="-12,8,-12,0" ColumnDefinitions="Auto,Auto,*,Auto,Auto">
+                                <Button x:Name="BoutonConnecterSpotify" Classes="texte" Content="Se connecter" Click="ConnecterSpotify"/>
+                                <Button x:Name="BoutonDeconnecterSpotify" Grid.Column="1" Classes="texte doux" Content="Se déconnecter" Click="DeconnecterSpotify"/>
+                                <Button Grid.Column="3" Classes="texte doux" Content="Copier l'adresse de retour" Click="CopierLAdresseDeRetour"/>
+                                <Button Grid.Column="4" Classes="texte doux" Content="Ouvrir le tableau de bord" Click="OuvrirLeTableauDeBordSpotify"
+                                        ToolTip.Tip="Ouvre developer.spotify.com/dashboard dans le navigateur"/>
+                            </Grid>
+                            <TextBlock x:Name="EtatDeLaCle" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{DynamicResource TexteDoux}"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+            </StackPanel>
+
+            <!-- Vue des torrents, posée ici par le code à la première visite (voir ChangerDeVue). -->
+            <Border x:Name="ZoneTorrents" IsVisible="False"/>
+
+            <!-- Pied. Les versions des outils, l'accès au compte Spotify et au journal. -->
+            <Border BorderBrush="{DynamicResource Filet}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel.Styles>
+                            <Style Selector="TextBlock">
+                                <Setter Property="FontSize" Value="12"/>
+                                <Setter Property="FontFeatures" Value="tnum"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TexteEtiquette}"/>
+                            </Style>
+                        </StackPanel.Styles>
+                        <TextBlock x:Name="TexteVersion" Text="Recherche des outils…"/>
+                        <TextBlock x:Name="VersionFfmpeg" Margin="16,0,0,0"/>
+                        <TextBlock x:Name="VersionDeno" Margin="16,0,0,0"/>
+                        <TextBlock x:Name="VersionSpotDl" Margin="16,0,0,0"/>
+                        <TextBlock x:Name="VersionGalleryDl" Margin="16,0,0,0"/>
+                    </StackPanel>
+                    <ToggleButton x:Name="BasculeCle" Grid.Column="1" Classes="texte doux" Height="32"
+                                  Content="Compte _Spotify" IsCheckedChanged="BasculerLaCle"/>
+                    <ToggleButton x:Name="BasculeJournal" Grid.Column="2" Classes="texte doux" Height="32" Margin="0,0,-12,0"
+                                  Content="Afficher le _journal" IsCheckedChanged="BasculerLeJournal"/>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Window>

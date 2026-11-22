@@ -3,12 +3,16 @@
      Une colonne d'étiquettes en capitales à gauche, les commandes alignées à droite, des filets d'un pixel
      à la place des cadres. Graphite neutre, angles à 2 px, aucun pictogramme, une seule couleur signal (l'ambre)
      réservée à l'action, au focus clavier et à la progression. Les chiffres sont en Bahnschrift, à chasse fixe.
-     Grille : marge de 24, colonne d'étiquettes de 112, gouttière de 16, lignes de 52, commandes de 36 de haut. -->
+     Grille : marge de 24, colonne d'étiquettes de 112, gouttière de 16, lignes de 52, commandes de 36 de haut.
+     La fenêtre se tire par ses côtés. Le dessin ne se déforme pas, il change d'échelle d'un seul bloc
+     (voir AdapterLEchelle), et la hauteur suit toujours le contenu. -->
 <Window x:Class="YtDlpInterface.FenetrePrincipale"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Download Everything"
-        Width="860" SizeToContent="Height" ResizeMode="CanMinimize"
+        Width="1000" MinWidth="740" MaxWidth="1500" SizeToContent="Height" ResizeMode="CanResize"
+        AllowDrop="True" PreviewDragOver="SurvolerAvecUnDepot" PreviewDrop="RecevoirUnDepot"
+        Activated="RegarderLePressePapiers"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource Fond}" Foreground="{DynamicResource Texte}"
         FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="14"
@@ -385,13 +389,49 @@
     </Window.Resources>
 
     <!-- Si l'écran est trop petit pour tout montrer (forte échelle d'affichage), le contenu défile au lieu d'être rogné. -->
-    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False" SizeChanged="AdapterLEchelle">
         <StackPanel Margin="24,8,24,12">
+            <!-- L'échelle de tout le contenu, réglée par la largeur de la fenêtre. -->
+            <StackPanel.LayoutTransform>
+                <ScaleTransform x:Name="Echelle"/>
+            </StackPanel.LayoutTransform>
 
-            <!-- Plaque de l'appareil -->
+            <!-- Plaque de l'appareil. À droite, la version de l'application, et le bouton qui installe la suivante quand elle existe. -->
             <Border Style="{StaticResource Ligne}" MinHeight="44">
-                <TextBlock Text="DOWNLOAD EVERYTHING" FontFamily="Bahnschrift" FontStretch="SemiCondensed" FontWeight="SemiBold"
-                           FontSize="15" VerticalAlignment="Center"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="128"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="DOWNLOAD EVERYTHING" FontFamily="Bahnschrift" FontStretch="SemiCondensed" FontWeight="SemiBold"
+                               FontSize="15" VerticalAlignment="Center" TextWrapping="NoWrap" Grid.ColumnSpan="2"/>
+                    <!-- Les deux vues de la fenêtre. Un torrent se suit autrement qu'un téléchargement, il a la sienne. -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="176,0,0,0" VerticalAlignment="Center">
+                        <RadioButton x:Name="ChoixVueTelechargement" Style="{StaticResource Touche}" GroupName="Vue" Content="Téléchargement"
+                                     Width="124" Height="30" FontSize="13" IsChecked="True" Checked="ChangerDeVue"
+                                     AutomationProperties.Name="Vue, téléchargement">
+                            <RadioButton.Tag>
+                                <CornerRadius>2,0,0,2</CornerRadius>
+                            </RadioButton.Tag>
+                        </RadioButton>
+                        <RadioButton x:Name="ChoixVueTorrents" Style="{StaticResource Touche}" GroupName="Vue" Content="Torrents" Margin="-1,0,0,0"
+                                     Width="104" Height="30" FontSize="13" Checked="ChangerDeVue"
+                                     AutomationProperties.Name="Vue, torrents"
+                                     ToolTip="Liens magnet et fichiers .torrent, avec leurs sources et leurs pairs">
+                            <RadioButton.Tag>
+                                <CornerRadius>0,2,2,0</CornerRadius>
+                            </RadioButton.Tag>
+                        </RadioButton>
+                    </StackPanel>
+                    <TextBlock x:Name="TexteVersionDeLAppli" Grid.Column="3" FontFamily="Bahnschrift" FontSize="12" VerticalAlignment="Center"
+                               Foreground="{StaticResource TexteEtiquette}" Typography.NumeralAlignment="Tabular"/>
+                    <Button x:Name="BoutonNouvelleVersion" Grid.Column="4" Style="{StaticResource BoutonTexte}" Height="32" Margin="12,0,-12,0"
+                            Foreground="{StaticResource Signal}" Visibility="Collapsed" Click="InstallerLaNouvelleVersion"
+                            ToolTip="Télécharge la nouvelle version depuis la page GitHub de l'application, contrôle son empreinte, puis redémarre"/>
+                </Grid>
             </Border>
 
             <!-- Bandeau d'alerte, montré seulement quand un outil manque ou ne répond pas. -->
@@ -410,6 +450,9 @@
                             Style="{StaticResource BoutonTexte}" Content="Ouvrir ce dossier" Click="OuvrirLeDossierDesOutils"/>
                 </Grid>
             </Border>
+
+            <!-- Vue de téléchargement : tout ce qui suit, jusqu'au pied, se cache quand on passe sur les torrents. -->
+            <StackPanel x:Name="VueTelechargement">
 
             <!-- SOURCE -->
             <Border Style="{StaticResource Ligne}">
@@ -578,17 +621,23 @@
                     <ColumnDefinition Width="128"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Button x:Name="BoutonTelecharger" Grid.Column="1" Style="{StaticResource BoutonSignal}" Content="_Télécharger"
                         IsDefault="True" Click="Telecharger" AutomationProperties.Name="Télécharger"/>
                 <Button x:Name="BoutonAnnuler" Grid.Column="2" Style="{StaticResource BoutonTexte}" Height="40" Padding="16,0" Margin="8,0,0,0"
                         Content="_Annuler" IsCancel="True" Visibility="Collapsed" Click="Annuler"/>
-                <Button x:Name="BoutonMettreAJour" Grid.Column="4" Style="{StaticResource BoutonTexte}" Height="40" Margin="0,0,-12,0"
+                <!-- N'apparaît qu'après une liste dont des éléments n'ont pas abouti. -->
+                <Button x:Name="BoutonReprendre" Grid.Column="3" Style="{StaticResource BoutonTexte}" Height="40" Padding="16,0" Margin="8,0,0,0"
+                        Visibility="Collapsed" Click="ReprendreLesManquants"
+                        ToolTip="Relance seulement ce qui n'a pas abouti dans la dernière liste, sans relire le lien"/>
+                <Button x:Name="BoutonMettreAJour" Grid.Column="5" Style="{StaticResource BoutonTexte}" Height="40" Margin="0,0,-12,0"
                         Foreground="{StaticResource TexteDoux}" Content="Tout _mettre à jour" Click="MettreAJour"
                         AutomationProperties.Name="Tout mettre à jour"
-                        ToolTip="Cherche les dernières versions de yt-dlp, ffmpeg, Deno et spotDL sur leurs dépôts officiels"/>
+                        ToolTip="Cherche les dernières versions de yt-dlp, ffmpeg, Deno, spotDL et gallery-dl sur leurs dépôts officiels"/>
             </Grid>
 
             <!-- ÉTAT. Rien au repos. La colonne de gauche sert d'afficheur : le pourcentage en grand, puis le mot de la fin. -->
@@ -782,6 +831,11 @@
                 </Grid>
             </Border>
 
+            </StackPanel>
+
+            <!-- Vue des torrents, posée ici par le code à la première visite (voir ChangerDeVue). -->
+            <Border x:Name="ZoneTorrents" Visibility="Collapsed"/>
+
             <!-- Pied. Les versions des outils, l'accès au compte Spotify et au journal. -->
             <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
                 <Grid>
@@ -793,9 +847,10 @@
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" TextElement.FontFamily="Bahnschrift"
                                 TextElement.FontSize="12" TextElement.Foreground="{StaticResource TexteEtiquette}">
                         <TextBlock x:Name="TexteVersion" Text="Recherche des outils…" Typography.NumeralAlignment="Tabular"/>
-                        <TextBlock x:Name="VersionFfmpeg" Margin="24,0,0,0"/>
-                        <TextBlock x:Name="VersionDeno" Margin="24,0,0,0"/>
-                        <TextBlock x:Name="VersionSpotDl" Margin="24,0,0,0"/>
+                        <TextBlock x:Name="VersionFfmpeg" Margin="16,0,0,0"/>
+                        <TextBlock x:Name="VersionDeno" Margin="16,0,0,0"/>
+                        <TextBlock x:Name="VersionSpotDl" Margin="16,0,0,0"/>
+                        <TextBlock x:Name="VersionGalleryDl" Margin="16,0,0,0"/>
                     </StackPanel>
                     <ToggleButton x:Name="BasculeCle" Grid.Column="1" Style="{StaticResource BoutonTexte}" Height="32"
                                   Foreground="{StaticResource TexteDoux}" Content="Compte _Spotify"

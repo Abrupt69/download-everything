@@ -1,0 +1,286 @@
+<!-- La vue des torrents, montrée dans la fenêtre principale à la place de la vue de téléchargement quand on
+     appuie sur la touche « Torrents ». Elle emprunte la palette et les styles de la fenêtre (voir le constructeur).
+     Un torrent dure et se regarde autrement qu'un simple téléchargement : en haut la liste des torrents, avec
+     leurs sources et leurs pairs, en bas les fichiers et les pairs de celui qui est choisi.
+     Largeur utile du dessin : 796. Les hauteurs sont fixées, la fenêtre calant sa hauteur sur son contenu. -->
+<UserControl x:Class="YtDlpInterface.VueTorrents"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="176"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="190"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- SOURCE. Un lien magnet ou l'adresse d'un fichier .torrent. Un fichier .torrent se glisse sur la fenêtre. -->
+        <Border Style="{StaticResource Ligne}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="112"/>
+                    <ColumnDefinition Width="16"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Style="{StaticResource Etiquette}" Text="SOURCE"/>
+                <TextBox x:Name="ChampTorrent" Grid.Column="2" Style="{StaticResource ChampEncadre}" KeyDown="ValiderAuClavier"
+                         AutomationProperties.Name="Lien magnet ou adresse d'un fichier torrent"
+                         ToolTip="Collez un lien magnet ou l'adresse d'un fichier .torrent. Un fichier .torrent se glisse aussi sur la fenêtre."/>
+                <Button x:Name="BoutonAjouter" Grid.Column="3" Style="{StaticResource BoutonTexte}" Margin="8,0,-12,0"
+                        Content="_Ajouter" Click="AjouterDepuisLeChamp"/>
+            </Grid>
+        </Border>
+
+        <!-- En-têtes de la liste, alignés sur les colonnes des lignes. -->
+        <Grid Grid.Row="1" Margin="8,14,8,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="158"/>
+                <ColumnDefinition Width="112"/>
+                <ColumnDefinition Width="84"/>
+                <ColumnDefinition Width="70"/>
+                <ColumnDefinition Width="62"/>
+                <ColumnDefinition Width="46"/>
+                <ColumnDefinition Width="52"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Style="{StaticResource Etiquette}" Text="NOM"/>
+            <TextBlock Grid.Column="1" Style="{StaticResource Etiquette}" Text="ÉTAT"/>
+            <TextBlock Grid.Column="2" Style="{StaticResource Etiquette}" Text="AVANCEMENT"/>
+            <TextBlock Grid.Column="3" Style="{StaticResource Etiquette}" Text="DÉBIT" Margin="14,0,0,0"/>
+            <TextBlock Grid.Column="4" Style="{StaticResource Etiquette}" Text="ENVOI"/>
+            <TextBlock Grid.Column="5" Style="{StaticResource Etiquette}" Text="SOURCES"
+                       ToolTip="Les pairs reliés qui ont le torrent en entier (seeders)"/>
+            <TextBlock Grid.Column="6" Style="{StaticResource Etiquette}" Text="PAIRS"
+                       ToolTip="Les pairs reliés qui le téléchargent encore (leechers)"/>
+            <TextBlock Grid.Column="7" Style="{StaticResource Etiquette}" Text="RESTE"/>
+        </Grid>
+
+        <!-- La liste des torrents. -->
+        <Border Grid.Row="2" BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,1">
+            <Grid>
+                <TextBlock x:Name="TexteVide" TextWrapping="Wrap" Margin="8,16,8,0" Foreground="{StaticResource TexteDoux}"
+                           Text="Aucun torrent pour l'instant. Collez un lien magnet ou l'adresse d'un fichier .torrent ci-dessus, ou glissez un fichier .torrent sur la fenêtre."/>
+                <ListBox x:Name="Liste" Background="Transparent" BorderThickness="0" Padding="0"
+                         HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         SelectionChanged="ChoisirUnTorrent" AutomationProperties.Name="Torrents">
+                    <ListBox.Template>
+                        <ControlTemplate TargetType="ListBox">
+                            <ScrollViewer Focusable="False" VerticalScrollBarVisibility="Auto">
+                                <ItemsPresenter/>
+                            </ScrollViewer>
+                        </ControlTemplate>
+                    </ListBox.Template>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                            <Setter Property="AutomationProperties.Name" Value="{Binding Nom}"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="Rangee" Background="Transparent" BorderBrush="{StaticResource Filet}"
+                                                BorderThickness="0,0,0,1" Padding="8,0" Height="40">
+                                            <ContentPresenter VerticalAlignment="Center"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Rangee" Property="Background" Value="{StaticResource Champ}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Rangee" Property="Background" Value="{StaticResource Survol}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="158"/>
+                                    <ColumnDefinition Width="112"/>
+                                    <ColumnDefinition Width="84"/>
+                                    <ColumnDefinition Width="70"/>
+                                    <ColumnDefinition Width="62"/>
+                                    <ColumnDefinition Width="46"/>
+                                    <ColumnDefinition Width="52"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Nom}" Margin="0,0,14,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Nom}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Etat}" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"
+                                           Foreground="{StaticResource TexteDoux}" TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <ProgressBar Height="6" Minimum="0" Maximum="100" Value="{Binding Pourcent}" IsIndeterminate="{Binding SansMouvement}">
+                                        <ProgressBar.Style>
+                                            <Style TargetType="ProgressBar" BasedOn="{StaticResource Avancement}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Etat}" Value="terminé">
+                                                        <Setter Property="Foreground" Value="{StaticResource Reussite}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Etat}" Value="erreur">
+                                                        <Setter Property="Foreground" Value="{StaticResource Alerte}"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Etat}" Value="en pause">
+                                                        <Setter Property="Foreground" Value="{StaticResource TexteInactif}"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </ProgressBar.Style>
+                                    </ProgressBar>
+                                    <TextBlock Text="{Binding Recu}" Margin="0,4,0,0" FontFamily="Bahnschrift" FontSize="11.5"
+                                               Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TexteEtiquette}"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="3" Text="{Binding Debit}" Margin="14,0,0,0" FontFamily="Bahnschrift" VerticalAlignment="Center"
+                                           Typography.NumeralAlignment="Tabular"/>
+                                <TextBlock Grid.Column="4" Text="{Binding Envoi}" FontFamily="Bahnschrift" VerticalAlignment="Center"
+                                           Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TexteDoux}"/>
+                                <TextBlock Grid.Column="5" Text="{Binding Sources}" FontFamily="Bahnschrift" VerticalAlignment="Center"
+                                           Typography.NumeralAlignment="Tabular"/>
+                                <TextBlock Grid.Column="6" Text="{Binding Pairs}" FontFamily="Bahnschrift" VerticalAlignment="Center"
+                                           Typography.NumeralAlignment="Tabular"/>
+                                <TextBlock Grid.Column="7" Text="{Binding Reste}" FontFamily="Bahnschrift" VerticalAlignment="Center"
+                                           Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TexteDoux}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- Actions sur le torrent choisi, le dernier message, et les débits de l'ensemble à droite. -->
+        <Grid Grid.Row="3" Margin="0,6,0,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="BoutonPause" Style="{StaticResource BoutonTexte}" Margin="-4,0,0,0" Content="_Pause" IsEnabled="False" Click="MettreEnPauseOuReprendre"/>
+            <Button x:Name="BoutonRetirer" Grid.Column="1" Style="{StaticResource BoutonTexte}" Content="_Retirer" IsEnabled="False" Click="Retirer"
+                    ToolTip="Arrête ce torrent et l'enlève de la liste. Les fichiers déjà reçus restent dans le dossier."/>
+            <Button x:Name="BoutonDossier" Grid.Column="2" Style="{StaticResource BoutonTexte}" Content="Ouvrir le _dossier" IsEnabled="False" Click="OuvrirLeDossier"/>
+            <TextBlock x:Name="TexteMessage" Grid.Column="3" Margin="16,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="13"
+                       Foreground="{StaticResource TexteDoux}" AutomationProperties.LiveSetting="Polite"/>
+        </Grid>
+
+        <!-- Détail du torrent choisi : ses fichiers à gauche, ses pairs à droite, plus larges pour leurs adresses. -->
+        <Grid Grid.Row="4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="24"/>
+                <ColumnDefinition Width="3*"/>
+            </Grid.ColumnDefinitions>
+
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Grid Margin="0,8,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="48"/>
+                        <ColumnDefinition Width="68"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="TitreFichiers" Style="{StaticResource Etiquette}" Text="FICHIERS"/>
+                    <TextBlock Grid.Column="1" Style="{StaticResource Etiquette}" Text="REÇU"/>
+                    <TextBlock Grid.Column="2" Style="{StaticResource Etiquette}" Text="TAILLE"/>
+                </Grid>
+                <Border Grid.Row="1" BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+                        <ItemsControl x:Name="Fichiers" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,0,0,1" Height="30">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="48"/>
+                                                <ColumnDefinition Width="68"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Nom}" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Nom}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Part}" FontFamily="Bahnschrift" FontSize="12.5" VerticalAlignment="Center"
+                                                       Typography.NumeralAlignment="Tabular"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Taille}" FontFamily="Bahnschrift" FontSize="12.5" VerticalAlignment="Center"
+                                                       Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TexteDoux}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <Grid Margin="0,8,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="112"/>
+                        <ColumnDefinition Width="78"/>
+                        <ColumnDefinition Width="62"/>
+                        <ColumnDefinition Width="48"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="TitrePairs" Style="{StaticResource Etiquette}" Text="PAIRS RELIÉS"/>
+                    <TextBlock Grid.Column="1" Style="{StaticResource Etiquette}" Text="LOGICIEL"/>
+                    <TextBlock Grid.Column="2" Style="{StaticResource Etiquette}" Text="NOUS ENVOIE"/>
+                    <TextBlock Grid.Column="3" Style="{StaticResource Etiquette}" Text="REÇOIT"/>
+                    <TextBlock Grid.Column="4" Style="{StaticResource Etiquette}" Text="RÔLE"/>
+                </Grid>
+                <Border Grid.Row="1" BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+                        <ItemsControl x:Name="Pairs" Focusable="False">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,0,0,1" Height="30">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="112"/>
+                                                <ColumnDefinition Width="78"/>
+                                                <ColumnDefinition Width="62"/>
+                                                <ColumnDefinition Width="48"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Adresse}" FontFamily="Bahnschrift" FontSize="12.5" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                       Typography.NumeralAlignment="Tabular" TextTrimming="CharacterEllipsis" ToolTip="{Binding Adresse}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Logiciel}" FontSize="12.5" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TexteDoux}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Recoit}" FontFamily="Bahnschrift" FontSize="12.5" VerticalAlignment="Center"
+                                                       Typography.NumeralAlignment="Tabular"/>
+                                            <TextBlock Grid.Column="3" Text="{Binding Envoie}" FontFamily="Bahnschrift" FontSize="12.5" VerticalAlignment="Center"
+                                                       Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TexteDoux}"/>
+                                            <TextBlock Grid.Column="4" Text="{Binding Role}" FontSize="12.5" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TexteDoux}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- Bas de la vue. Où vont les fichiers, les débits de l'ensemble, et l'outil. -->
+        <Grid Grid.Row="5" Margin="0,10,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="TexteRangement" FontSize="12" Foreground="{StaticResource TexteEtiquette}" TextTrimming="CharacterEllipsis"/>
+            <TextBlock x:Name="TexteEnsemble" Grid.Column="1" Margin="16,0,0,0" FontFamily="Bahnschrift" FontSize="12"
+                       Foreground="{StaticResource TexteEtiquette}" Typography.NumeralAlignment="Tabular"/>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -11,3 +11,6 @@ Charge/fichiers/
 *.user
 .vs/
 publication-essai/
+
+# Paquet Linux, recréé par linux/construire-deb.ps1
+linux/publication/

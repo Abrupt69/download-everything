@@ -1,0 +1,176 @@
+<!-- La vue des torrents pour Linux, dessinée avec Avalonia. Même contenu et mêmes noms que la version Windows
+     (VueTorrents.xaml, dans le dossier parent), dont elle partage le code. En haut la liste des torrents, avec
+     leurs sources et leurs pairs, en bas les fichiers et les pairs de celui qui est choisi. -->
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="YtDlpInterface.VueTorrents">
+    <UserControl.Styles>
+        <!-- Une ligne de la liste : un filet dessous, la ligne choisie légèrement plus claire, sans couleur d'accent. -->
+        <Style Selector="ListBoxItem">
+            <Setter Property="Padding" Value="8,0"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="MinHeight" Value="40"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource Filet}"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="CornerRadius" Value="0"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="ListBoxItem /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Champ}"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Survol}"/>
+        </Style>
+        <Style Selector="ListBoxItem:selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource Survol}"/>
+        </Style>
+        <Style Selector="ProgressBar.pause">
+            <Setter Property="Foreground" Value="{DynamicResource TexteInactif}"/>
+        </Style>
+        <Style Selector="TextBlock.chiffre">
+            <Setter Property="FontFeatures" Value="tnum"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </UserControl.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,176,Auto,190,Auto">
+
+        <!-- SOURCE. Un lien magnet ou l'adresse d'un fichier .torrent. -->
+        <Border Classes="ligne">
+            <Grid ColumnDefinitions="112,16,*,Auto">
+                <TextBlock Classes="etiquette" Text="SOURCE"/>
+                <TextBox x:Name="ChampTorrent" Grid.Column="2" VerticalAlignment="Center" KeyDown="ValiderAuClavier"
+                         PlaceholderText="Un lien magnet, ou l'adresse d'un fichier .torrent"
+                         AutomationProperties.Name="Lien magnet ou adresse d'un fichier torrent"/>
+                <Button x:Name="BoutonAjouter" Grid.Column="3" Classes="texte" Margin="8,0,-12,0" Content="_Ajouter" Click="AjouterDepuisLeChamp"/>
+            </Grid>
+        </Border>
+
+        <!-- En-têtes de la liste, alignés sur les colonnes des lignes. -->
+        <Grid Grid.Row="1" Margin="8,14,8,6" ColumnDefinitions="*,158,112,84,66,70,50,48">
+            <TextBlock Classes="etiquette" Text="NOM"/>
+            <TextBlock Grid.Column="1" Classes="etiquette" Text="ÉTAT"/>
+            <TextBlock Grid.Column="2" Classes="etiquette" Text="AVANCEMENT"/>
+            <TextBlock Grid.Column="3" Classes="etiquette" Text="DÉBIT" Margin="14,0,0,0"/>
+            <TextBlock Grid.Column="4" Classes="etiquette" Text="ENVOI"/>
+            <TextBlock Grid.Column="5" Classes="etiquette" Text="SOURCES" ToolTip.Tip="Les pairs reliés qui ont le torrent en entier (seeders)"/>
+            <TextBlock Grid.Column="6" Classes="etiquette" Text="PAIRS" ToolTip.Tip="Les pairs reliés qui le téléchargent encore (leechers)"/>
+            <TextBlock Grid.Column="7" Classes="etiquette" Text="RESTE"/>
+        </Grid>
+
+        <!-- La liste des torrents. -->
+        <Border Grid.Row="2" BorderBrush="{DynamicResource Filet}" BorderThickness="0,1,0,1">
+            <Grid>
+                <TextBlock x:Name="TexteVide" TextWrapping="Wrap" Margin="8,16,8,0" Foreground="{DynamicResource TexteDoux}"
+                           Text="Aucun torrent pour l'instant. Collez un lien magnet ou l'adresse d'un fichier .torrent ci-dessus."/>
+                <ListBox x:Name="Liste" Background="Transparent" BorderThickness="0" Padding="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         SelectionChanged="ChoisirUnTorrent" AutomationProperties.Name="Torrents">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="*,158,112,84,66,70,50,48">
+                                <TextBlock Text="{Binding Nom}" Margin="0,0,14,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           ToolTip.Tip="{Binding Nom}"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Etat}" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TexteDoux}" TextTrimming="CharacterEllipsis"/>
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <ProgressBar Classes="fine" Classes.fini="{Binding Fini}" Classes.echec="{Binding EnEchec}" Classes.pause="{Binding EnPause}"
+                                                 Minimum="0" Maximum="100" Value="{Binding Pourcent}" IsIndeterminate="{Binding SansMouvement}"/>
+                                    <TextBlock Text="{Binding Recu}" Margin="0,4,0,0" FontSize="11.5" FontFeatures="tnum"
+                                               Foreground="{DynamicResource TexteEtiquette}"/>
+                                </StackPanel>
+                                <TextBlock Grid.Column="3" Classes="chiffre" Text="{Binding Debit}" Margin="14,0,0,0"/>
+                                <TextBlock Grid.Column="4" Classes="chiffre" Text="{Binding Envoi}" Foreground="{DynamicResource TexteDoux}"/>
+                                <TextBlock Grid.Column="5" Classes="chiffre" Text="{Binding Sources}"/>
+                                <TextBlock Grid.Column="6" Classes="chiffre" Text="{Binding Pairs}"/>
+                                <TextBlock Grid.Column="7" Classes="chiffre" Text="{Binding Reste}" Foreground="{DynamicResource TexteDoux}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- Actions sur le torrent choisi, et le dernier message. -->
+        <Grid Grid.Row="3" Margin="0,6,0,6" ColumnDefinitions="Auto,Auto,Auto,*">
+            <Button x:Name="BoutonPause" Classes="texte" Margin="-4,0,0,0" Content="_Pause" IsEnabled="False" Click="MettreEnPauseOuReprendre"/>
+            <Button x:Name="BoutonRetirer" Grid.Column="1" Classes="texte" Content="_Retirer" IsEnabled="False" Click="Retirer"
+                    ToolTip.Tip="Arrête ce torrent et l'enlève de la liste. Les fichiers déjà reçus restent dans le dossier."/>
+            <Button x:Name="BoutonDossier" Grid.Column="2" Classes="texte" Content="Ouvrir le _dossier" IsEnabled="False" Click="OuvrirLeDossier"/>
+            <TextBlock x:Name="TexteMessage" Grid.Column="3" Margin="16,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" FontSize="13"
+                       Foreground="{DynamicResource TexteDoux}"/>
+        </Grid>
+
+        <!-- Détail du torrent choisi : ses fichiers à gauche, ses pairs à droite, plus larges pour leurs adresses. -->
+        <Grid Grid.Row="4" ColumnDefinitions="2*,24,3*">
+            <Grid RowDefinitions="Auto,*">
+                <Grid Margin="0,8,0,6" ColumnDefinitions="*,48,68">
+                    <TextBlock x:Name="TitreFichiers" Classes="etiquette" Text="FICHIERS"/>
+                    <TextBlock Grid.Column="1" Classes="etiquette" Text="REÇU"/>
+                    <TextBlock Grid.Column="2" Classes="etiquette" Text="TAILLE"/>
+                </Grid>
+                <Border Grid.Row="1" BorderBrush="{DynamicResource Filet}" BorderThickness="0,1,0,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="Fichiers">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{DynamicResource Filet}" BorderThickness="0,0,0,1" Height="30">
+                                        <Grid ColumnDefinitions="*,48,68">
+                                            <TextBlock Text="{Binding Nom}" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Nom}"/>
+                                            <TextBlock Grid.Column="1" Classes="chiffre" Text="{Binding Part}" FontSize="12.5"/>
+                                            <TextBlock Grid.Column="2" Classes="chiffre" Text="{Binding Taille}" FontSize="12.5" Foreground="{DynamicResource TexteDoux}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <Grid Grid.Column="2" RowDefinitions="Auto,*">
+                <Grid Margin="0,8,0,6" ColumnDefinitions="*,104,96,62,48">
+                    <TextBlock x:Name="TitrePairs" Classes="etiquette" Text="PAIRS RELIÉS"/>
+                    <TextBlock Grid.Column="1" Classes="etiquette" Text="LOGICIEL"/>
+                    <TextBlock Grid.Column="2" Classes="etiquette" Text="NOUS ENVOIE"/>
+                    <TextBlock Grid.Column="3" Classes="etiquette" Text="REÇOIT"/>
+                    <TextBlock Grid.Column="4" Classes="etiquette" Text="RÔLE"/>
+                </Grid>
+                <Border Grid.Row="1" BorderBrush="{DynamicResource Filet}" BorderThickness="0,1,0,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="Pairs">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border BorderBrush="{DynamicResource Filet}" BorderThickness="0,0,0,1" Height="30">
+                                        <Grid ColumnDefinitions="*,104,96,62,48">
+                                            <TextBlock Classes="chiffre" Text="{Binding Adresse}" FontSize="12.5" Margin="0,0,8,0"
+                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Adresse}"/>
+                                            <TextBlock Grid.Column="1" Text="{Binding Logiciel}" FontSize="12.5" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TexteDoux}" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Grid.Column="2" Classes="chiffre" Text="{Binding Recoit}" FontSize="12.5"/>
+                                            <TextBlock Grid.Column="3" Classes="chiffre" Text="{Binding Envoie}" FontSize="12.5" Foreground="{DynamicResource TexteDoux}"/>
+                                            <TextBlock Grid.Column="4" Text="{Binding Role}" FontSize="12.5" VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TexteDoux}"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- Bas de la vue. Où vont les fichiers, les débits de l'ensemble, et l'outil. -->
+        <Grid Grid.Row="5" Margin="0,10,0,10" ColumnDefinitions="*,Auto">
+            <TextBlock x:Name="TexteRangement" FontSize="12" Foreground="{DynamicResource TexteEtiquette}" TextTrimming="CharacterEllipsis"/>
+            <TextBlock x:Name="TexteEnsemble" Grid.Column="1" Margin="16,0,0,0" FontSize="12" FontFeatures="tnum"
+                       Foreground="{DynamicResource TexteEtiquette}"/>
+        </Grid>
+    </Grid>
+</UserControl>

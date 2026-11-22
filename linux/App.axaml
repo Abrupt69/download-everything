@@ -1,0 +1,18 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="YtDlpInterface.App"
+             RequestedThemeVariant="Dark">
+    <Application.Resources>
+        <!-- La couleur signal du panneau, l'ambre, sert aussi d'accent : case cochée, ligne choisie d'une liste, focus. -->
+        <Color x:Key="SystemAccentColor">#FFB000</Color>
+        <Color x:Key="SystemAccentColorDark1">#E09B00</Color>
+        <Color x:Key="SystemAccentColorDark2">#C28600</Color>
+        <Color x:Key="SystemAccentColorDark3">#A37100</Color>
+        <Color x:Key="SystemAccentColorLight1">#FFB81A</Color>
+        <Color x:Key="SystemAccentColorLight2">#FFC233</Color>
+        <Color x:Key="SystemAccentColorLight3">#FFCC4D</Color>
+    </Application.Resources>
+    <Application.Styles>
+        <FluentTheme/>
+    </Application.Styles>
+</Application>

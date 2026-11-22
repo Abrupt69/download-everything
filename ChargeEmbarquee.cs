@@ -4,7 +4,7 @@ using System.Reflection;
 namespace YtDlpInterface;
 
 /// <summary>
-/// Les programmes que l'exécutable transporte avec lui (yt-dlp, ffmpeg, ffprobe, Deno), pour qu'un seul fichier
+/// Les programmes que l'exécutable transporte avec lui (yt-dlp, ffmpeg, ffprobe, Deno, spotDL, gallery-dl, aria2), pour qu'un seul fichier
 /// suffise sur un PC où rien n'est installé. À la première ouverture ils sont déposés dans le dossier des outils.
 /// </summary>
 internal static class ChargeEmbarquee
@@ -15,7 +15,7 @@ internal static class ChargeEmbarquee
 
     // À augmenter quand un programme est ajouté à la charge. Un PC déjà équipé d'une charge plus ancienne
     // reçoit alors les programmes qui lui manquent, sans que les siens soient remplacés.
-    private const int Generation = 2;
+    private const int Generation = 4;
 
     // Écrit en dernier. Sa présence dit que le déploiement est allé au bout, même si la fenêtre
     // a été fermée ou le PC éteint pendant une tentative précédente.
