@@ -15,8 +15,11 @@ internal sealed record Choix(string Libelle, string Valeur)
 /// Ce qui précède le nom du fichier, déjà prêt à entrer dans un modèle de yt-dlp. Vide pour une vidéo seule.
 /// Pour une vidéo de playlist, le dossier de la playlist et son rang, voir <see cref="YtDlp.PrefixeDeListe"/>.
 /// </param>
+/// <param name="Egaliseur">Filtres de ffmpeg à appliquer au son, vide pour aucun. Voir <see cref="YtDlp.Egaliseurs"/>.</param>
+/// <param name="QualiteDuSon">Débit du son quand il est converti (MP3, M4A, Opus…), au format de yt-dlp. « 0 » vise le meilleur.</param>
 internal sealed record Demande(
-    string Adresse, bool AudioSeul, string Format, string Qualite, string Dossier, string PrefixeDeNom);
+    string Adresse, bool AudioSeul, string Format, string Qualite, string Dossier, string PrefixeDeNom, string QualiteDuSon = "0",
+    string Egaliseur = "");
 
 /// <summary>Les programmes compagnons trouvés dans le dossier des outils, null quand ils manquent.</summary>
 internal sealed record Complements(string? Ffmpeg, string? Deno);
@@ -55,9 +58,69 @@ internal static class YtDlp
         new("OGG Vorbis", "vorbis"),
         new("FLAC, sans perte", "flac"),
         new("WAV, sans perte", "wav"),
+        new("AIFF, sans perte", "aiff"),
         new("ALAC, sans perte", "alac"),
         FormatDOrigine,
     ];
+
+    // Égaliseur. Chaque réglage est une chaîne de filtres de ffmpeg, dont l'effet a été mesuré sur un bruit de
+    // test (basses +6 dB, aigus +5 dB, voix +3 dB autour de 2 500 Hz). Un limiteur ferme les réglages qui
+    // renforcent une bande, pour qu'un passage fort ne sature pas. « Volume égalisé » ne touche pas au timbre :
+    // il ramène tous les morceaux au même niveau sonore, utile pour une playlist venue de sources diverses.
+    public static readonly Choix[] Egaliseurs =
+    [
+        new("Aucun", ""),
+        new("Basses renforcées", "bass=g=6:f=100,alimiter=limit=0.95"),
+        new("Aigus renforcés", "treble=g=5:f=8000,alimiter=limit=0.95"),
+        new("Basses et aigus", "bass=g=5:f=100,treble=g=4:f=8000,alimiter=limit=0.95"),
+        new("Voix en avant", "equalizer=f=2500:t=q:w=1:g=4,bass=g=-2:f=100,alimiter=limit=0.95"),
+        new("Volume égalisé", "loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000"),
+    ];
+
+    /// <summary>
+    /// Les arguments qui disent à yt-dlp sous quelle forme rendre le son, une fois « -x » demandé.
+    /// Trois cas sortent de l'ordinaire.
+    /// L'AIFF n'est pas dans la liste des formats d'extraction de yt-dlp : le son est extrait, puis converti.
+    /// L'ALAC doit être forcé, sinon yt-dlp rend de l'AAC dans le même type de fichier (vérifié aux essais).
+    /// L'égaliseur oblige à réencoder. Pour ne pas ajouter une perte, le filtre est appliqué pendant une
+    /// extraction sans perte (FLAC), et c'est ce résultat qui est converti vers le format demandé.
+    /// </summary>
+    private static List<string> SortieAudio(string format, string qualite, string egaliseur)
+    {
+        var filtre = egaliseur.Length > 0 ? $"-af {egaliseur}" : "";
+        // Garder « le format d'origine » n'a pas de sens avec un égaliseur, le son étant réencodé de toute façon.
+        // On rend alors de l'Opus, léger et fidèle.
+        if (format.Length == 0 && filtre.Length > 0) format = "opus";
+
+        switch (format)
+        {
+            case "":
+                return [];
+            case "flac" or "wav":
+                return filtre.Length > 0 ? ["--audio-format", format, "--ppa", $"ExtractAudio:{filtre}"] : ["--audio-format", format];
+            case "alac":
+                return ["--audio-format", "alac", "--ppa", $"ExtractAudio:{(filtre.Length > 0 ? filtre + " " : "")}-acodec alac"];
+            case "aiff" when filtre.Length == 0:
+                return ["--recode-video", "aiff"];
+        }
+
+        if (filtre.Length == 0) return ["--audio-format", format, "--audio-quality", qualite];
+
+        // Avec égaliseur : extraction en FLAC filtrée, puis conversion. « vorbis » s'appelle « ogg » à cette étape.
+        var cible = format == "vorbis" ? "ogg" : format;
+        var arguments = new List<string> { "--audio-format", "flac", "--ppa", $"ExtractAudio:{filtre}", "--recode-video", cible };
+        var debit = qualite.EndsWith('K') ? qualite[..^1] + "k" : "";
+        var reglage = cible switch
+        {
+            "mp3" => debit.Length > 0 ? $"-b:a {debit}" : "-q:a 0",
+            "m4a" or "aac" => $"-b:a {(debit.Length > 0 ? debit : "256k")}",
+            "opus" => $"-b:a {(debit.Length > 0 ? debit : "160k")}",
+            "ogg" => debit.Length > 0 ? $"-b:a {debit}" : "-q:a 6",
+            _ => "",
+        };
+        if (reglage.Length > 0) arguments.AddRange(["--ppa", $"VideoConvertor:{reglage}"]);
+        return arguments;
+    }
 
     // La valeur est la hauteur d'image maximale. Vide, yt-dlp prend la plus haute que le site propose.
     public static readonly Choix[] Qualites =
@@ -77,8 +140,12 @@ internal static class YtDlp
     /// Les programmes ne sont cherchés que là. Un fichier du même nom posé ailleurs, par exemple
     /// dans Téléchargements à côté de l'exécutable, n'est jamais lancé à leur place.
     /// </summary>
-    public static string DossierOutils { get; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Download Everything");
+    public static string DossierOutils { get; } =
+        // Aide aux essais. Cette variable d'environnement déplace le dossier, ce qui permet d'essayer une nouvelle
+        // version dans une copie à part, avec ses propres outils et réglages, sans gêner une application déjà ouverte.
+        Environment.GetEnvironmentVariable("DOWNLOAD_EVERYTHING_DOSSIER") is { Length: > 0 } ailleurs && Path.IsPathFullyQualified(ailleurs)
+            ? ailleurs
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Download Everything");
 
     /// <summary>Marque en tête des lignes de mesure que yt-dlp écrit pour l'interface, voir le gabarit ci-dessous.</summary>
     public const string MarqueDeMesure = "DE|";
@@ -187,11 +254,11 @@ internal static class YtDlp
         else if (demande.AudioSeul)
         {
             arguments.AddRange(["--ffmpeg-location", complements.Ffmpeg, "--embed-metadata", "-f", "ba/b", "-x"]);
-            if (demande.Format.Length > 0)
-                arguments.AddRange(["--audio-format", demande.Format, "--audio-quality", "0"]);
+            arguments.AddRange(SortieAudio(demande.Format, demande.QualiteDuSon, demande.Egaliseur));
             // Pour M4A et AAC, on prend la piste AAC du site quand elle existe.
             // Partir de la piste Opus obligerait à la réencoder, avec une seconde perte de qualité.
-            if (demande.Format is "m4a" or "aac") tri.Add("aext:m4a");
+            // Avec un égaliseur le son est réencodé quoi qu'il arrive, autant partir alors de la meilleure piste.
+            if (demande.Format is "m4a" or "aac" && demande.Egaliseur.Length == 0) tri.Add("aext:m4a");
         }
         else
         {
@@ -296,7 +363,8 @@ internal static class YtDlp
     /// secondes près, puis inscrit dans le fichier les informations de Spotify plutôt que celles de la vidéo.
     /// </summary>
     public static List<string> ArgumentsPourUnMorceau(
-        Morceau morceau, string format, string dossier, bool dansUnSousDossier, Complements complements, bool surYoutubeMusic, string trace)
+        Morceau morceau, string format, string dossier, bool dansUnSousDossier, Complements complements, bool surYoutubeMusic,
+        string trace, string qualiteDuSon = "0", string egaliseur = "")
     {
         var arguments = new List<string>
         {
@@ -316,8 +384,8 @@ internal static class YtDlp
         if (morceau.Duree > 0)
             arguments.AddRange(["--match-filter", $"duration>={morceau.Duree - 6} & duration<={morceau.Duree + 6}"]);
 
-        if (format.Length > 0) arguments.AddRange(["--audio-format", format, "--audio-quality", "0"]);
-        if (format is "m4a" or "aac") arguments.AddRange(["-S", "aext:m4a"]);
+        arguments.AddRange(SortieAudio(format, qualiteDuSon, egaliseur));
+        if (format is "m4a" or "aac" && egaliseur.Length == 0) arguments.AddRange(["-S", "aext:m4a"]);
         if (format is "mp3" or "m4a" or "opus" or "vorbis" or "flac" or "alac")
         {
             // La jaquette d'un morceau est carrée mais YouTube la sert dans une image large. On la recadre au carré.
@@ -354,14 +422,73 @@ internal static class YtDlp
         arguments.AddRange(["--parse-metadata", $"DE {source}:DE (?P<{champ}>.+)"]);
     }
 
-    private static string NomDuMorceau(Morceau morceau, bool dansUnSousDossier)
+    private static string NomDuMorceau(Morceau morceau, bool dansUnSousDossier) =>
+        // Ce nom est écrit en clair dans le modèle de yt-dlp, où le pour-cent annonce un champ.
+        NomDuMorceauEnClair(morceau, dansUnSousDossier).Replace("%", "%%");
+
+    private static string NomDuMorceauEnClair(Morceau morceau, bool dansUnSousDossier)
     {
         var nom = NomDeFichier(morceau.Artiste.Length > 0 ? $"{morceau.Artiste} - {morceau.Titre}" : morceau.Titre);
         if (dansUnSousDossier && morceau.Liste.Length > 0)
-            nom = NomDeFichier(morceau.Liste) + "/" + (morceau.Rang > 0 ? $"{morceau.Rang:00} - " : "") + nom;
-        // Ce nom est écrit en clair dans le modèle de yt-dlp, où le pour-cent annonce un champ.
-        return nom.Replace("%", "%%");
+        {
+            var rang = morceau.Rang > 0 ? morceau.Rang.ToString("D" + Math.Max(2, morceau.LargeurDuRang)) + " - " : "";
+            nom = NomDeFichier(morceau.Liste) + "/" + rang + nom;
+        }
+        return nom;
     }
+
+    /// <summary>
+    /// Le chemin du fichier qu'un morceau donnera, ou null quand son extension ne peut pas être connue d'avance
+    /// (format d'origine). Il sert à sauter d'emblée un morceau déjà présent, pour reprendre une longue playlist.
+    /// </summary>
+    public static string? CheminAttenduDuMorceau(Morceau morceau, string format, string dossier, bool dansUnSousDossier)
+    {
+        var extension = format switch
+        {
+            "mp3" or "m4a" or "opus" or "flac" or "wav" or "aac" or "aiff" => format,
+            "vorbis" => "ogg",
+            "alac" => "m4a",
+            _ => null,
+        };
+        return extension is null
+            ? null
+            : Path.Combine(dossier, NomDuMorceauEnClair(morceau, dansUnSousDossier).Replace('/', Path.DirectorySeparatorChar) + "." + extension);
+    }
+
+    // Le rang en tête d'un fichier de liste, « 007 - ».
+    private static readonly System.Text.RegularExpressions.Regex RangEnTete = new(@"^\d{2,4} - ", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    /// <summary>
+    /// Le fichier de ce morceau s'il est déjà dans le dossier, sinon null. Dans une liste, il est reconnu même
+    /// rangé sous un autre numéro : la playlist a pu changer d'ordre ou s'allonger depuis la fois précédente.
+    /// </summary>
+    public static string? MorceauDejaPresent(Morceau morceau, string format, string dossier, bool dansUnSousDossier)
+    {
+        if (CheminAttenduDuMorceau(morceau, format, dossier, dansUnSousDossier) is not { } attendu) return null;
+        if (File.Exists(attendu)) return attendu;
+        if (!dansUnSousDossier || Path.GetDirectoryName(attendu) is not { } repertoire || !Directory.Exists(repertoire)) return null;
+
+        var nom = RangEnTete.Replace(Path.GetFileName(attendu), "");
+        try
+        {
+            return Directory.EnumerateFiles(repertoire, "*" + Path.GetExtension(attendu))
+                .FirstOrDefault(f => RangEnTete.Replace(Path.GetFileName(f), "").Equals(nom, StringComparison.OrdinalIgnoreCase));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    // Débit du son converti. Zéro laisse l'encodeur viser sa meilleure qualité.
+    public static readonly Choix[] QualitesDuSon =
+    [
+        new("La meilleure", "0"),
+        new("320 kb/s", "320K"),
+        new("256 kb/s", "256K"),
+        new("192 kb/s", "192K"),
+        new("128 kb/s", "128K"),
+    ];
 
     /// <summary>Un texte rendu sûr comme nom de fichier sur Windows, Mac et Android, sans caractère interdit.</summary>
     private static string NomDeFichier(string texte)
@@ -519,25 +646,60 @@ internal static class YtDlp
     }
 }
 
-/// <summary>Le seul réglage gardé d'une fois sur l'autre, le dossier de destination.</summary>
+/// <summary>
+/// Les réglages gardés d'une fois sur l'autre : le dossier de destination, le nombre de téléchargements
+/// à la fois, la qualité du son. Un petit fichier texte, une ligne « clé=valeur » par réglage.
+/// </summary>
 internal static class Reglages
 {
     private static string Fichier => Path.Combine(YtDlp.DossierOutils, "reglages.txt");
 
-    public static string LireDossier()
+    private static Dictionary<string, string> Tout()
     {
+        var reglages = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            if (File.Exists(Fichier))
+            if (!File.Exists(Fichier)) return reglages;
+            foreach (var ligne in File.ReadAllLines(Fichier))
             {
-                var dossier = File.ReadAllText(Fichier).Trim();
-                if (Directory.Exists(dossier)) return dossier;
+                var coupe = ligne.IndexOf('=');
+                // Les premières versions n'écrivaient que le dossier, seul sur sa ligne. On le relit tel quel.
+                if (coupe <= 0 || ligne.Contains(":\\", StringComparison.Ordinal) && !ligne.StartsWith("dossier=", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (ligne.Trim().Length > 0) reglages.TryAdd("dossier", ligne.Trim());
+                    continue;
+                }
+                reglages[ligne[..coupe].Trim()] = ligne[(coupe + 1)..].Trim();
             }
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
-            // Réglage illisible, on repart du dossier par défaut.
+            // Réglages illisibles, on repart des valeurs par défaut.
         }
+        return reglages;
+    }
+
+    public static string Lire(string cle, string defaut) => Tout().GetValueOrDefault(cle) is { Length: > 0 } valeur ? valeur : defaut;
+
+    public static void Ecrire(string cle, string valeur)
+    {
+        try
+        {
+            var reglages = Tout();
+            reglages[cle] = valeur;
+            Directory.CreateDirectory(YtDlp.DossierOutils);
+            File.WriteAllLines(Fichier, reglages.Select(r => $"{r.Key}={r.Value}"));
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Ne pas retenir un réglage n'empêche pas de télécharger.
+        }
+    }
+
+    public static string LireDossier()
+    {
+        var dossier = Lire("dossier", "");
+        if (dossier.Length > 0 && Directory.Exists(dossier)) return dossier;
 
         var videos = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
         return Directory.Exists(videos)
@@ -545,16 +707,5 @@ internal static class Reglages
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
     }
 
-    public static void EcrireDossier(string dossier)
-    {
-        try
-        {
-            Directory.CreateDirectory(YtDlp.DossierOutils);
-            File.WriteAllText(Fichier, dossier);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // Ne pas retenir le dossier n'empêche pas de télécharger.
-        }
-    }
+    public static void EcrireDossier(string dossier) => Ecrire("dossier", dossier);
 }

@@ -189,6 +189,29 @@
             </Setter>
         </Style>
 
+        <!-- Champ de saisie ordinaire, avec son propre cadre. Le contour passe à l'ambre quand le clavier est dedans. -->
+        <ControlTemplate x:Key="GabaritDeChamp" TargetType="Control">
+            <Border x:Name="Cadre" Background="{StaticResource Champ}" BorderBrush="{StaticResource Contour}" BorderThickness="1"
+                    CornerRadius="{StaticResource Rayon}">
+                <ScrollViewer x:Name="PART_ContentHost" Margin="10,0" VerticalAlignment="Center" Focusable="False"
+                              HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Hidden"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                    <Setter TargetName="Cadre" Property="BorderBrush" Value="{StaticResource Signal}"/>
+                    <Setter TargetName="Cadre" Property="BorderThickness" Value="2"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+        <Style x:Key="ChampEncadre" TargetType="TextBox">
+            <Setter Property="Height" Value="36"/>
+            <Setter Property="Foreground" Value="{StaticResource Texte}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource Texte}"/>
+            <Setter Property="SelectionBrush" Value="{StaticResource Texte}"/>
+            <Setter Property="SelectionOpacity" Value="0.25"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template" Value="{StaticResource GabaritDeChamp}"/>
+        </Style>
         <!-- Liste déroulante, dessinée comme un champ avec un chevron tracé. -->
         <Style TargetType="ComboBox">
             <Setter Property="Height" Value="36"/>
@@ -508,8 +531,44 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Style="{StaticResource Etiquette}" Text="OPTIONS"/>
-                    <CheckBox x:Name="ChoixPlaylist" Grid.Column="2" Style="{StaticResource Case}" HorizontalAlignment="Left" VerticalAlignment="Center"
-                              Content="Toute la playlist, quand l'adresse en contient une"/>
+                    <Grid Grid.Column="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="10"/>
+                            <ColumnDefinition Width="68"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox x:Name="ChoixPlaylist" Style="{StaticResource Case}" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                  Content="Toute la playlist"
+                                  ToolTip="Quand l'adresse désigne une vidéo qui fait partie d'une playlist, prendre toute la playlist"/>
+                        <TextBlock Grid.Column="1" Style="{StaticResource Etiquette}" Text="À LA FOIS"/>
+                        <ComboBox x:Name="ChoixSimultanes" Grid.Column="3" AutomationProperties.Name="Nombre de téléchargements à la fois"
+                                  ToolTip="Pour les albums, les playlists et plusieurs liens. Au-delà de 5, YouTube refuse plus souvent des demandes."/>
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- SON. Deux réglages qui ne valent que pour le son seul : son débit, et un égaliseur. -->
+            <Border Style="{StaticResource Ligne}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="112"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="24"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource Etiquette}" Text="SON"/>
+                    <TextBlock Grid.Column="2" Style="{StaticResource Etiquette}" Text="QUALITÉ"/>
+                    <ComboBox x:Name="ChoixQualiteSon" Grid.Column="4" AutomationProperties.Name="Qualité du son"
+                              ToolTip="Débit du son converti (MP3, M4A, Opus). La source dépasse rarement 160 kb/s, un débit plus haut grossit le fichier sans l'améliorer."/>
+                    <TextBlock Grid.Column="6" Style="{StaticResource Etiquette}" Text="ÉGALISEUR"/>
+                    <ComboBox x:Name="ChoixEgaliseur" Grid.Column="8" AutomationProperties.Name="Égaliseur"
+                              ToolTip="Appliqué à chaque son téléchargé en mode Audio seul. Le son est alors réencodé, et le format d'origine devient de l'Opus."/>
                 </Grid>
             </Border>
 
@@ -613,6 +672,9 @@
                                                                     <DataTrigger Binding="{Binding Etat}" Value="erreur">
                                                                         <Setter Property="Foreground" Value="{StaticResource Alerte}"/>
                                                                     </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Etat}" Value="refusé">
+                                                                        <Setter Property="Foreground" Value="{StaticResource Alerte}"/>
+                                                                    </DataTrigger>
                                                                     <DataTrigger Binding="{Binding Etat}" Value="introuvable">
                                                                         <Setter Property="Foreground" Value="{StaticResource Alerte}"/>
                                                                     </DataTrigger>
@@ -665,11 +727,67 @@
                 <FlowDocument PagePadding="0" FontFamily="Cascadia Mono, Consolas" FontSize="12"/>
             </RichTextBox>
 
-            <!-- Pied. Les versions des trois outils, et l'accès au journal. -->
+            <!-- Compte Spotify, replié au repos. Connecté à son compte, on lit en quelques secondes toutes ses playlists,
+                 quelle que soit leur longueur. C'est facultatif, sans connexion tout marche quand même. -->
+            <Border x:Name="ZoneCle" Visibility="Collapsed" BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0" Padding="0,14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="112"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Style="{StaticResource Etiquette}" Text="COMPTE SPOTIFY" VerticalAlignment="Top" Margin="0,3,0,0"/>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TexteDoux}" FontSize="13"
+                                   Text="Facultatif. Connecté à votre compte, vos playlists se lisent en entier en quelques secondes, même avec plusieurs centaines de titres. Spotify demande un abonnement Premium et ne laisse lire ainsi que vos propres playlists. Le mot de passe se tape sur la page de Spotify, jamais ici."/>
+                        <TextBlock TextWrapping="Wrap" Foreground="{StaticResource TexteDoux}" FontSize="13" Margin="0,10,0,0"
+                                   Text="1. Sur le tableau de bord Spotify, créez une application et cochez Web API.  2. Dans Redirect URIs, collez l'adresse de retour ci-dessous.  3. Collez ici le Client ID de l'application, puis connectez-vous."/>
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock x:Name="EtiquetteIdSpotify" Style="{StaticResource Etiquette}" Text="CLIENT ID" Margin="0,0,0,6"/>
+                                <TextBox x:Name="ChampIdSpotify" Style="{StaticResource ChampEncadre}" MaxLength="64"
+                                         AutomationProperties.LabeledBy="{Binding ElementName=EtiquetteIdSpotify}"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock x:Name="EtiquetteRetourSpotify" Style="{StaticResource Etiquette}" Text="ADRESSE DE RETOUR" Margin="0,0,0,6"/>
+                                <TextBox x:Name="ChampRetourSpotify" Style="{StaticResource ChampEncadre}" IsReadOnly="True"
+                                         AutomationProperties.LabeledBy="{Binding ElementName=EtiquetteRetourSpotify}"/>
+                            </StackPanel>
+                        </Grid>
+                        <Grid Margin="-12,8,-12,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="BoutonConnecterSpotify" Style="{StaticResource BoutonTexte}" Content="Se connecter" Click="ConnecterSpotify"/>
+                            <Button x:Name="BoutonDeconnecterSpotify" Grid.Column="1" Style="{StaticResource BoutonTexte}" Foreground="{StaticResource TexteDoux}"
+                                    Content="Se déconnecter" Click="DeconnecterSpotify"/>
+                            <Button Grid.Column="3" Style="{StaticResource BoutonTexte}" Foreground="{StaticResource TexteDoux}"
+                                    Content="Copier l'adresse de retour" Click="CopierLAdresseDeRetour"/>
+                            <Button Grid.Column="4" Style="{StaticResource BoutonTexte}" Foreground="{StaticResource TexteDoux}"
+                                    Content="Ouvrir le tableau de bord" Click="OuvrirLeTableauDeBordSpotify"
+                                    ToolTip="Ouvre developer.spotify.com/dashboard dans le navigateur"/>
+                        </Grid>
+                        <TextBlock x:Name="EtatDeLaCle" Margin="0,4,0,0" TextWrapping="Wrap" Foreground="{StaticResource TexteDoux}"
+                                   AutomationProperties.LiveSetting="Polite"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Pied. Les versions des outils, l'accès au compte Spotify et au journal. -->
             <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0" Padding="0,8,0,0">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center" TextElement.FontFamily="Bahnschrift"
@@ -679,7 +797,10 @@
                         <TextBlock x:Name="VersionDeno" Margin="24,0,0,0"/>
                         <TextBlock x:Name="VersionSpotDl" Margin="24,0,0,0"/>
                     </StackPanel>
-                    <ToggleButton x:Name="BasculeJournal" Grid.Column="1" Style="{StaticResource BoutonTexte}" Height="32" Margin="0,0,-12,0"
+                    <ToggleButton x:Name="BasculeCle" Grid.Column="1" Style="{StaticResource BoutonTexte}" Height="32"
+                                  Foreground="{StaticResource TexteDoux}" Content="Compte _Spotify"
+                                  Checked="BasculerLaCle" Unchecked="BasculerLaCle"/>
+                    <ToggleButton x:Name="BasculeJournal" Grid.Column="2" Style="{StaticResource BoutonTexte}" Height="32" Margin="0,0,-12,0"
                                   Foreground="{StaticResource TexteDoux}" Content="Afficher le _journal"
                                   Checked="BasculerLeJournal" Unchecked="BasculerLeJournal"/>
                 </Grid>

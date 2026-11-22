@@ -106,6 +106,21 @@ public partial class FenetrePrincipale : Window
         ChoixQualite.SelectedIndex = 0;
         AdapterLesListes();
 
+        // Les deux options, relues telles que laissées la dernière fois, et notées dès qu'on les change.
+        ChoixSimultanes.ItemsSource = Enumerable.Range(1, 10).ToList();
+        ChoixSimultanes.SelectedItem = int.TryParse(Reglages.Lire("simultanes", "5"), out var simultanes) && simultanes is >= 1 and <= 10 ? simultanes : 5;
+        ChoixSimultanes.SelectionChanged += (_, _) => Reglages.Ecrire("simultanes", Simultanes.ToString(CultureInfo.InvariantCulture));
+        ChoixQualiteSon.ItemsSource = YtDlp.QualitesDuSon;
+        var qualiteNotee = Reglages.Lire("qualite-du-son", "0");
+        ChoixQualiteSon.SelectedItem = YtDlp.QualitesDuSon.FirstOrDefault(q => q.Valeur == qualiteNotee) ?? YtDlp.QualitesDuSon[0];
+        ChoixQualiteSon.SelectionChanged += (_, _) => Reglages.Ecrire("qualite-du-son", (ChoixQualiteSon.SelectedItem as Choix)?.Valeur ?? "0");
+        // L'égaliseur est retenu par son nom, pas par ses filtres, pour qu'un réglage affiné plus tard reste reconnu.
+        ChoixEgaliseur.ItemsSource = YtDlp.Egaliseurs;
+        var egaliseurNote = Reglages.Lire("egaliseur", "");
+        ChoixEgaliseur.SelectedItem = YtDlp.Egaliseurs.FirstOrDefault(e => e.Libelle == egaliseurNote) ?? YtDlp.Egaliseurs[0];
+        ChoixEgaliseur.SelectionChanged += (_, _) => Reglages.Ecrire("egaliseur", (ChoixEgaliseur.SelectedItem as Choix)?.Libelle ?? "");
+        AdapterLesListes();
+
         Loaded += async (_, _) =>
         {
             ChampAdresse.Focus();
@@ -156,6 +171,9 @@ public partial class FenetrePrincipale : Window
         }
         ChoixFormat.IsEnabled = avecFfmpeg;
         ChoixQualite.IsEnabled = !audio;
+        // Qualité du son et égaliseur ne concernent que le son seul, et demandent ffmpeg.
+        if (ChoixQualiteSon is not null) ChoixQualiteSon.IsEnabled = audio && avecFfmpeg;
+        if (ChoixEgaliseur is not null) ChoixEgaliseur.IsEnabled = audio && avecFfmpeg;
     }
 
     // ───────────────────────────── Petites actions ─────────────────────────────
@@ -443,6 +461,8 @@ public partial class FenetrePrincipale : Window
             if (executable is null) return;
 
             _annulationDemandee = false;
+            _qualiteDuSon = (ChoixQualiteSon.SelectedItem as Choix)?.Valeur ?? "0";
+            _egaliseur = ChoixEgaliseur.IsEnabled ? (ChoixEgaliseur.SelectedItem as Choix)?.Valeur ?? "" : "";
 
             // Plusieurs liens collés ensemble forment une file, menée de front.
             if (adresses.Count > 1)
@@ -452,7 +472,15 @@ public partial class FenetrePrincipale : Window
             }
 
             // Un lien Spotify suit son propre parcours, tout le reste va droit à yt-dlp.
-            if (SpotDl.EstUneAdresseSpotify(adresse))
+            if (LiensDeMusique.PlateformeFermee(adresse) is { } fermee)
+            {
+                // Tidal, Qobuz et Amazon Music refusent la lecture de leurs listes à un programme sans compte.
+                // Le dire tout de suite vaut mieux qu'un échec obscur de yt-dlp.
+                Terminer("ERREUR", $"{fermee} ne laisse pas lire la liste de ses titres sans compte, ce lien ne peut pas être traité. "
+                                   + "Les liens Spotify, Deezer, Apple Music, YouTube Music, SoundCloud et Bandcamp marchent.", Ton.Erreur);
+                return;
+            }
+            if (LiensDeMusique.Plateforme(adresse) is not null)
             {
                 await TelechargerDepuisSpotifyAsync(executable, adresse, dossier);
                 return;
@@ -490,7 +518,7 @@ public partial class FenetrePrincipale : Window
                         if (titre.Length > 0) element.Titre = titre;
                         _elements.Add(element);
                         // Chaque vidéo est demandée seule, dans le dossier de la playlist et précédée de son rang.
-                        var uneVideo = new Demande(video, audioSeul, format, qualite, dossier, YtDlp.PrefixeDeListe(nomDeListe, i + 1));
+                        var uneVideo = new Demande(video, audioSeul, format, qualite, dossier, YtDlp.PrefixeDeListe(nomDeListe, i + 1), _qualiteDuSon, _egaliseur);
                         travaux.Add(new Travail(element, "erreur", suivi => YtDlp.ArgumentsTelechargement(uneVideo, _complements, suivi)));
                     }
                     var (recus, echecs) = await MenerLaListeAsync(executable, travaux);
@@ -500,7 +528,7 @@ public partial class FenetrePrincipale : Window
                 // Ce n'était pas une playlist. La vidéo seule suit le chemin habituel, sans sous-dossier.
             }
 
-            var demande = new Demande(adresse, audioSeul, format, qualite, dossier, PrefixeDeNom: "");
+            var demande = new Demande(adresse, audioSeul, format, qualite, dossier, PrefixeDeNom: "", QualiteDuSon: _qualiteDuSon, Egaliseur: _egaliseur);
 
             YtDlp.EffacerLaTrace();
             Mesures.Visibility = Visibility.Visible;
@@ -551,6 +579,11 @@ public partial class FenetrePrincipale : Window
                 Mesures.Visibility = Visibility.Collapsed;
                 MarquerLElementCourant("erreur");
                 BasculeJournal.IsChecked = true;   // le détail de l'erreur est là, autant le montrer
+                if (_refusDeYoutube > 0)
+                {
+                    Terminer("BLOQUÉ", MessageDuBlocage, Ton.Erreur);
+                    return;
+                }
                 Terminer("ERREUR", $"yt-dlp a signalé une erreur (code {code}), le détail est dans le journal. "
                                    + "Si le site a changé, essayez le bouton Tout mettre à jour.", Ton.Erreur);
             }
@@ -681,7 +714,7 @@ public partial class FenetrePrincipale : Window
         Etat("Annulation…", annoncer: true);
         // Tous les yt-dlp en marche sont arrêtés, celui d'une vidéo seule comme les cinq d'une liste.
         // S'il n'y en a aucun (lecture d'un sommaire), la demande sera lue juste avant le lancement suivant.
-        var enMarche = _actifs.Select(t => t.Processus).Append(_enCours).OfType<Process>().ToList();
+        var enMarche = _actifs.Select(t => t.Processus).Append(_enCours).Append(_lectureEnFond).OfType<Process>().ToList();
         if (enMarche.Count == 0) return;
         // L'arrêt attend quelques secondes que chaque yt-dlp fasse son ménage, hors du fil de la fenêtre pour ne pas la figer.
         await Task.Run(() => Parallel.ForEach(enMarche, processus => ArbreDeProcessus.Arreter(processus)));
@@ -696,7 +729,7 @@ public partial class FenetrePrincipale : Window
             return;
         }
         _annulationDemandee = true;   // plus aucun travail de liste ne démarre pendant la fermeture
-        var enMarche = _actifs.Select(t => t.Processus).Append(_enCours).OfType<Process>().ToList();
+        var enMarche = _actifs.Select(t => t.Processus).Append(_enCours).Append(_lectureEnFond).OfType<Process>().ToList();
         Parallel.ForEach(enMarche, processus => ArbreDeProcessus.Arreter(processus, delaiDeMenageMs: 1500));
     }
 
@@ -755,8 +788,15 @@ public partial class FenetrePrincipale : Window
 
     // ───────────────────────────── Listes menées à plusieurs de front ─────────────────────────────
 
-    // Nombre de téléchargements menés en même temps dans un album ou une playlist.
-    private const int Simultanes = 5;
+    // Nombre de téléchargements menés en même temps dans un album, une playlist ou une file de liens.
+    // Réglable de 1 à 10 dans la fenêtre. Cinq par défaut, au-delà YouTube refuse plus souvent des demandes.
+    private int Simultanes => ChoixSimultanes.SelectedItem is int nombre ? nombre : 5;
+
+    // Qualité du son choisie au moment où l'on clique Télécharger, gardée telle quelle pour tout le travail.
+    private string _qualiteDuSon = "0";
+
+    // Filtres de l'égaliseur choisi au clic, vides pour aucun. Il ne s'applique qu'au son seul.
+    private string _egaliseur = "";
 
     /// <summary>Un téléchargement d'une liste : sa ligne à l'écran, et les recherches à essayer dans l'ordre.</summary>
     private sealed class Travail(ElementDePlaylist element, string enCasDEchec, params Func<string, List<string>>[] tentatives)
@@ -769,12 +809,50 @@ public partial class FenetrePrincipale : Window
         /// <summary>Chaque tentative reçoit son fichier de suivi et rend les arguments de yt-dlp. La première qui donne un fichier gagne.</summary>
         public Func<string, List<string>>[] Tentatives { get; } = tentatives;
 
+        /// <summary>
+        /// Cherche dans le dossier le fichier que ce travail produirait, quand son nom est connu d'avance.
+        /// S'il y est déjà, il n'y a rien à faire. La question est posée au dernier moment, juste avant de lancer.
+        /// </summary>
+        public Func<string?>? ChercherExistant { get; init; }
+
         public Process? Processus;
         public double Recu, Total, Debit;   // le fichier en cours de transfert
         public double DejaRecu;             // les fichiers déjà finis de ce travail, l'image avant le son par exemple
         public bool DejaLa;
         public string Liaison = "—", Format = "—";
     }
+
+    // Blocage de YouTube. Après beaucoup de demandes rapprochées, YouTube refuse tout ce qui vient de la même
+    // connexion et répond « connectez-vous pour confirmer que vous n'êtes pas un robot ». Le refus dure quelques
+    // heures. Continuer ne sert à rien et le prolonge : au bout de quelques refus, la liste s'arrête d'elle-même.
+    private const string MarqueDuBlocage = "Sign in to confirm";
+    private const int RefusAvantArret = 6;
+    private int _refusDeYoutube;
+    private bool _youtubeBloque;
+
+    private const string MessageDuBlocage =
+        "YouTube refuse pour l'instant les demandes venant de cette connexion, après trop de téléchargements rapprochés. "
+        + "Ce n'est pas une panne et les morceaux ne sont pas introuvables. Réessayez dans quelques heures, avec moins de "
+        + "téléchargements à la fois (3 par exemple). Ce qui est déjà reçu reste dans le dossier et ne sera pas repris.";
+
+    /// <summary>Compte un refus de YouTube. Au-delà du seuil, arrête la liste en cours et tous ses yt-dlp.</summary>
+    private void NoterUnRefusDeYoutube()
+    {
+        _refusDeYoutube++;
+        if (_youtubeBloque || !_listeMaitrisee || _refusDeYoutube < RefusAvantArret) return;
+        _youtubeBloque = true;
+        _annulationDemandee = true;   // plus aucun travail ne démarre
+        Etat("YouTube refuse les demandes de cette connexion. Arrêt de la liste…", Ton.Erreur, annoncer: true);
+        var enMarche = _actifs.Select(t => t.Processus).Append(_lectureEnFond).OfType<Process>().ToList();
+        _ = Task.Run(() => Parallel.ForEach(enMarche, processus => ArbreDeProcessus.Arreter(processus)));
+    }
+
+    // Débuts des lignes que yt-dlp écrit pour chaque recherche, sans intérêt dans le journal d'une liste.
+    private static readonly string[] BruitDeRecherche =
+    [
+        "[youtube:music:search_url]", "[youtube:search]", "[download] Downloading playlist:",
+        "[download] Finished downloading playlist:", "[download] Downloading item ", "[info] Maximum number of downloads reached",
+    ];
 
     // Les travaux dont un yt-dlp tourne en ce moment. Tout se passe sur le fil de la fenêtre, sans verrou.
     private readonly List<Travail> _actifs = [];
@@ -783,7 +861,12 @@ public partial class FenetrePrincipale : Window
     /// Mène une liste de téléchargements, plusieurs à la fois. Chaque « ouvrier » prend le travail suivant dans
     /// la file dès qu'il a fini le sien. Rend les fichiers obtenus et le nombre de travaux restés sans résultat.
     /// </summary>
-    private async Task<(List<string> Fichiers, int Echecs)> MenerLaListeAsync(string executable, List<Travail> travaux)
+    /// <param name="suite">
+    /// Des travaux qui arriveront plus tard, la fin d'une grande playlist encore en cours de lecture.
+    /// Ils rejoignent la file dès qu'ils sont connus, et les ouvriers les attendent s'ils ont fini avant.
+    /// </param>
+    private async Task<(List<string> Fichiers, int Echecs)> MenerLaListeAsync(
+        string executable, List<Travail> travaux, Task<List<Travail>>? suite = null)
     {
         _listeMaitrisee = true;
         _total = travaux.Count;
@@ -792,7 +875,8 @@ public partial class FenetrePrincipale : Window
         var echecs = 0;
         var faits = 0;
         var chrono = Stopwatch.StartNew();
-        var deFront = Math.Min(Simultanes, travaux.Count);
+        var deFront = suite is null ? Math.Min(Simultanes, travaux.Count) : Simultanes;
+        var suiteVersee = suite is null;
 
         Mesures.Visibility = Visibility.Visible;
         BarreProgression.ClearValue(ForegroundProperty);
@@ -801,17 +885,55 @@ public partial class FenetrePrincipale : Window
         BarreProgression.Visibility = Visibility.Visible;
         BarreDesTaches.ProgressState = TaskbarItemProgressState.Indeterminate;
         if (_total > 1) BasculeElements.Visibility = Visibility.Visible;
-        Etat(_total > 1 ? $"{_total} téléchargements, {deFront} à la fois" : "Recherche…", annoncer: true);
+        Etat(suite is not null ? $"{_total} téléchargements, {deFront} à la fois. Lecture de la suite de la playlist en cours…"
+            : _total > 1 ? $"{_total} téléchargements, {deFront} à la fois"
+            : "Recherche…", annoncer: true);
 
         void Montrer() => MontrerLEnsemble(travaux, faits, chrono.Elapsed.TotalSeconds);
+
+        // La suite de la playlist vient d'être lue : ses travaux rejoignent la file et le total affiché grandit.
+        void VerserLaSuite()
+        {
+            suiteVersee = true;
+            foreach (var travail in suite!.IsCompletedSuccessfully ? suite.Result : [])
+            {
+                travaux.Add(travail);
+                file.Enqueue(travail);
+            }
+            _total = travaux.Count;
+            _totalAnnonce = 0;   // la file contient maintenant tout, c'est elle qui fait foi
+            Etat($"{_total} téléchargements, {deFront} à la fois", annoncer: true);
+            Montrer();
+        }
 
         async Task Ouvrier(int numero)
         {
             // Un fichier de suivi par ouvrier, sinon cinq yt-dlp écriraient leur résultat au même endroit.
             var suivi = Path.Combine(YtDlp.DossierOutils, $"suivi-{numero}.txt");
-            while (file.Count > 0 && !_annulationDemandee)
+            while (!_annulationDemandee)
             {
+                if (file.Count == 0)
+                {
+                    // Plus rien dans la file. Si la suite de la playlist est encore en lecture on l'attend, sinon c'est fini.
+                    if (suiteVersee) break;
+                    await Task.WhenAny(suite!, Task.Delay(500));
+                    if (suite!.IsCompleted && !suiteVersee) VerserLaSuite();
+                    // Le temps écoulé continue d'avancer pendant l'attente, sinon l'affichage semblerait figé.
+                    else if (numero == 1) Montrer();
+                    continue;
+                }
+
                 var travail = file.Dequeue();
+                if (travail.ChercherExistant?.Invoke() is { } existant)
+                {
+                    // Déjà dans le dossier, d'un téléchargement précédent. Rien à lancer.
+                    fichiers.Add(existant);
+                    travail.Element.Etat = "déjà là";
+                    travail.Element.Pourcent = 100;
+                    faits++;
+                    Montrer();
+                    continue;
+                }
                 _actifs.Add(travail);
                 travail.Element.Etat = "recherche";
                 Montrer();
@@ -840,7 +962,8 @@ public partial class FenetrePrincipale : Window
                 }
                 else if (_annulationDemandee)
                 {
-                    travail.Element.Etat = "annulé";
+                    // Arrêté par l'utilisateur, ou par le blocage de YouTube. Dans les deux cas le morceau n'est pas « introuvable ».
+                    travail.Element.Etat = _youtubeBloque ? "refusé" : "annulé";
                 }
                 else
                 {
@@ -928,8 +1051,13 @@ public partial class FenetrePrincipale : Window
             return true;
         }
 
+        if (ligne.Contains(MarqueDuBlocage, StringComparison.Ordinal)) NoterUnRefusDeYoutube();
         if (ligne.EndsWith("has already been downloaded", StringComparison.Ordinal)) travail.DejaLa = true;
         else if (EtapesDeFfmpeg.Any(etape => ligne.StartsWith(etape, StringComparison.Ordinal))) travail.Element.Etat = "assemblage";
+
+        // Chaque recherche de morceau fait écrire à yt-dlp une demi-douzaine de lignes sur sa « playlist » de
+        // résultats. Elles n'apprennent rien et noieraient le journal d'une longue liste, on ne les recopie pas.
+        if (BruitDeRecherche.Any(debut => ligne.StartsWith(debut, StringComparison.Ordinal))) return false;
         Ecrire(ligne, travail.Element.Numero);
         return false;
     }
@@ -937,7 +1065,8 @@ public partial class FenetrePrincipale : Window
     /// <summary>Les chiffres d'ensemble d'une liste : ce qui est fini, la somme des débits, le temps qui reste.</summary>
     private void MontrerLEnsemble(List<Travail> travaux, int faits, double secondes)
     {
-        var total = travaux.Count;
+        // Le total est celui de la playlist entière dès qu'il est connu, même si la suite n'a pas encore rejoint la file.
+        var total = Math.Max(travaux.Count, _totalAnnonce);
         var enCours = _actifs.Sum(t => t.Total > 0 ? Math.Clamp(t.Recu / t.Total, 0, 1) : 0);
         var part = total > 0 ? Math.Clamp((faits + enCours) / total, 0, 1) : 0;
         if (part > 0) Avancer(part * 100);
@@ -973,7 +1102,13 @@ public partial class FenetrePrincipale : Window
         }
         MesureDebit.Text = "—";
 
-        if (_annulationDemandee)
+        if (_youtubeBloque)
+        {
+            BarreProgression.IsIndeterminate = false;
+            BarreProgression.Visibility = Visibility.Collapsed;
+            Terminer("BLOQUÉ", MessageDuBlocage, Ton.Erreur);
+        }
+        else if (_annulationDemandee)
         {
             BarreProgression.IsIndeterminate = false;
             BarreProgression.Visibility = Visibility.Collapsed;
@@ -1020,32 +1155,24 @@ public partial class FenetrePrincipale : Window
         foreach (var adresse in adresses)
         {
             if (_annulationDemandee) break;
-            if (!SpotDl.EstUneAdresseSpotify(adresse))
+            if (LiensDeMusique.Plateforme(adresse) is null)
             {
                 // Le titre affiché est l'adresse, le temps que yt-dlp donne le vrai titre.
                 var element = new ElementDePlaylist(_elements.Count + 1) { Titre = adresse };
                 _elements.Add(element);
-                var demande = new Demande(adresse, audioSeul, format, qualite, dossier, PrefixeDeNom: "");
+                var demande = new Demande(adresse, audioSeul, format, qualite, dossier, PrefixeDeNom: "", QualiteDuSon: _qualiteDuSon, Egaliseur: _egaliseur);
                 travaux.Add(new Travail(element, "erreur", suivi => YtDlp.ArgumentsTelechargement(demande, _complements, suivi)));
                 continue;
             }
 
-            List<Morceau> morceaux = [];
-            try
-            {
-                using var delai = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-                (morceaux, _) = await PageSpotify.LireAsync(client, adresse, delai.Token);
-            }
-            catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or InvalidOperationException)
-            {
-                // Le message ci-dessous couvre aussi ce cas.
-            }
+            // Dans une file de liens, une playlist d'un autre s'arrête aux cent titres de la page publique.
+            var (morceaux, _) = await LireUnLienSpotifyAsync(client, adresse);
             if (morceaux.Count == 0)
             {
-                Ecrire($"ERROR: le lien Spotify {adresse} n'a pas pu être lu, il est laissé de côté.");
+                Ecrire($"ERROR: le lien {adresse} n'a pas pu être lu, il est laissé de côté.");
                 continue;
             }
-            // Un lien Spotify ne donne que du son, en MP3 si l'on était sur Vidéo.
+            // Un lien de plateforme de musique ne donne que du son, en MP3 si l'on était sur Vidéo.
             var formatDuSon = audioSeul ? format : "mp3";
             var enListe = morceaux.Count > 1;
             foreach (var morceau in morceaux)
@@ -1053,8 +1180,8 @@ public partial class FenetrePrincipale : Window
                 var element = new ElementDePlaylist(_elements.Count + 1) { Titre = $"{morceau.Artiste} - {morceau.Titre}" };
                 _elements.Add(element);
                 travaux.Add(new Travail(element, "introuvable",
-                    suivi => YtDlp.ArgumentsPourUnMorceau(morceau, formatDuSon, dossier, enListe, _complements, surYoutubeMusic: true, suivi),
-                    suivi => YtDlp.ArgumentsPourUnMorceau(morceau, formatDuSon, dossier, enListe, _complements, surYoutubeMusic: false, suivi)));
+                    suivi => YtDlp.ArgumentsPourUnMorceau(morceau, formatDuSon, dossier, enListe, _complements, surYoutubeMusic: true, suivi, _qualiteDuSon, _egaliseur),
+                    suivi => YtDlp.ArgumentsPourUnMorceau(morceau, formatDuSon, dossier, enListe, _complements, surYoutubeMusic: false, suivi, _qualiteDuSon, _egaliseur)));
             }
         }
 
@@ -1065,6 +1192,173 @@ public partial class FenetrePrincipale : Window
         }
         var (fichiers, echecs) = await MenerLaListeAsync(executable, travaux);
         ConclureLaListe(fichiers, echecs);
+    }
+
+    // ───────────────────────────── Compte Spotify ─────────────────────────────
+
+    private CancellationTokenSource? _connexionEnCours;
+
+    private void BasculerLaCle(object sender, RoutedEventArgs e)
+    {
+        var ouvert = BasculeCle.IsChecked == true;
+        ZoneCle.Visibility = ouvert ? Visibility.Visible : Visibility.Collapsed;
+        if (!ouvert) return;
+        ChampRetourSpotify.Text = CompteSpotify.AdresseDeRetour;
+        if (ChampIdSpotify.Text.Length == 0) ChampIdSpotify.Text = CompteSpotify.IdClient;
+        MontrerLeCompte();
+        GarderLaFenetreALEcran();
+    }
+
+    private void MontrerLeCompte(string? message = null, bool erreur = false)
+    {
+        var connecte = CompteSpotify.EstConnecte;
+        BoutonDeconnecterSpotify.IsEnabled = connecte;
+        BasculeCle.Content = connecte ? "Compte _Spotify, connecté" : "Compte _Spotify";
+        EtatDeLaCle.Text = message ?? (connecte
+            ? "Connecté. Vos playlists Spotify seront lues en entier, par ce compte."
+            : "Non connecté. Les playlists sont lues sur la page publique de Spotify, limitée aux 100 premiers titres.");
+        EtatDeLaCle.SetResourceReference(TextBlock.ForegroundProperty, erreur ? "Alerte" : "TexteDoux");
+        if (message is not null) Annoncer(EtatDeLaCle);
+    }
+
+    private async void ConnecterSpotify(object sender, RoutedEventArgs e)
+    {
+        // Un second clic pendant l'attente annule la connexion en cours.
+        if (_connexionEnCours is { } enCours)
+        {
+            enCours.Cancel();
+            return;
+        }
+
+        var id = ChampIdSpotify.Text.Trim();
+        if (!CompteSpotify.IdValide(id))
+        {
+            MontrerLeCompte("Collez d'abord le Client ID de votre application Spotify. Il fait 32 caractères, des chiffres et des lettres de a à f.", erreur: true);
+            ChampIdSpotify.Focus();
+            return;
+        }
+
+        // Trois minutes pour se connecter dans le navigateur, largement de quoi taper un mot de passe.
+        using var arret = _connexionEnCours = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        BoutonConnecterSpotify.Content = "Annuler la connexion";
+        MontrerLeCompte("La page de connexion de Spotify s'ouvre dans votre navigateur. Connectez-vous, puis revenez ici.");
+        try
+        {
+            using var client = MiseAJourDesOutils.NouveauClient();
+            await CompteSpotify.ConnecterAsync(id, client, arret.Token);
+            MontrerLeCompte();
+            Ecrire("Compte Spotify connecté.");
+        }
+        catch (OperationCanceledException)
+        {
+            MontrerLeCompte("Connexion abandonnée, ou restée sans réponse pendant trois minutes.", erreur: true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or IOException
+                                       or System.Net.Sockets.SocketException or System.Text.Json.JsonException or Win32Exception or KeyNotFoundException)
+        {
+            MontrerLeCompte($"La connexion n'a pas abouti. {ex.Message}", erreur: true);
+        }
+        finally
+        {
+            _connexionEnCours = null;
+            BoutonConnecterSpotify.Content = "Se connecter";
+        }
+    }
+
+    private void DeconnecterSpotify(object sender, RoutedEventArgs e)
+    {
+        CompteSpotify.Deconnecter();
+        MontrerLeCompte("Déconnecté. Le jeton gardé sur ce PC est effacé.");
+    }
+
+    private void CopierLAdresseDeRetour(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Clipboard.SetText(CompteSpotify.AdresseDeRetour);
+            MontrerLeCompte("Adresse de retour copiée. Collez-la dans la case Redirect URIs de votre application Spotify.");
+        }
+        catch (COMException)
+        {
+            MontrerLeCompte("Le presse-papiers est occupé, réessayez.", erreur: true);
+        }
+    }
+
+    private void OuvrirLeTableauDeBordSpotify(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            // Adresse fixe, ouverte par le navigateur par défaut.
+            Process.Start(new ProcessStartInfo(CompteSpotify.TableauDeBord) { UseShellExecute = true })?.Dispose();
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException)
+        {
+            MontrerLeCompte($"Le navigateur n'a pas pu s'ouvrir. {ex.Message}", erreur: true);
+        }
+    }
+
+    /// <summary>
+    /// Lit les morceaux d'un lien Spotify par la source la plus complète disponible. Pour une playlist et un
+    /// compte connecté, le catalogue officiel, qui donne tout. Sinon, ou si Spotify refuse (playlist d'un autre),
+    /// la page publique, limitée aux cent premiers titres. « incomplete » dit qu'il reste sans doute une suite à lire.
+    /// </summary>
+    private async Task<(List<Morceau> Morceaux, bool Incomplete)> LireUnLienSpotifyAsync(HttpClient client, string adresse)
+    {
+        // Deezer et Apple Music. Leurs catalogues publics rendent la liste entière, il n'y a pas de suite à lire.
+        if (LiensDeMusique.Plateforme(adresse) is "Deezer" or "Apple Music")
+        {
+            var plateforme = LiensDeMusique.Plateforme(adresse)!;
+            try
+            {
+                using var delai = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+                var avancement = new Progress<(int Lus, int Total)>(p => Etat($"Lecture sur {plateforme}, {p.Lus} sur {p.Total}…"));
+                var lus = plateforme == "Deezer"
+                    ? await CatalogueDeezer.LireAsync(client, adresse, avancement, delai.Token)
+                    : await CatalogueApple.LireAsync(client, adresse, avancement, delai.Token);
+                if (lus.Count > 0) Ecrire($"Lu sur le catalogue public de {plateforme}, {lus.Count} {(lus.Count > 1 ? "morceaux" : "morceau")}.");
+                return (lus, false);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or OperationCanceledException
+                                           or System.Text.Json.JsonException or KeyNotFoundException or UriFormatException)
+            {
+                Ecrire($"ERROR: {plateforme} n'a pas pu être lu. {ex.Message}");
+                return ([], false);
+            }
+        }
+
+        if (CompteSpotify.EstConnecte && PageSpotify.Identifier(adresse) is ("playlist", var idPlaylist))
+        {
+            try
+            {
+                using var delai = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+                var avancement = new Progress<(int Lus, int Total)>(p => Etat($"Lecture de la playlist par votre compte Spotify, {p.Lus} sur {p.Total}…"));
+                var (nom, lus) = await CompteSpotify.LirePlaylistAsync(client, idPlaylist, avancement, delai.Token);
+                if (lus.Count > 0)
+                {
+                    Ecrire($"Playlist « {nom} » lue par votre compte Spotify, {lus.Count} morceaux.");
+                    return (lus, false);
+                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or OperationCanceledException
+                                           or System.Text.Json.JsonException or KeyNotFoundException)
+            {
+                // Le cas courant : la playlist d'un autre, que Spotify ne laisse pas lire ainsi. On passe à la page publique.
+                Ecrire($"Lecture par votre compte Spotify impossible. {ex.Message} Passage à la page publique.");
+            }
+        }
+
+        try
+        {
+            using var delai = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            var (morceaux, incomplete) = await PageSpotify.LireAsync(client, adresse, delai.Token);
+            if (morceaux.Count > 0) Ecrire($"Lu sur la page publique de Spotify, {morceaux.Count} {(morceaux.Count > 1 ? "morceaux" : "morceau")}.");
+            return (morceaux, incomplete);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or InvalidOperationException)
+        {
+            Ecrire($"La page publique de Spotify n'a pas pu être lue. {ex.Message}");
+            return ([], false);
+        }
     }
 
     // ───────────────────────────── Liens Spotify ─────────────────────────────
@@ -1083,36 +1377,27 @@ public partial class FenetrePrincipale : Window
             return;
         }
 
-        // Un lien Spotify ne donne que du son, quel que soit le choix Vidéo ou Audio.
+        // Un lien de plateforme de musique ne donne que du son, quel que soit le choix Vidéo ou Audio.
+        var source = LiensDeMusique.Plateforme(adresse) ?? "Spotify";
         var format = ChoixAudio.IsChecked == true ? (ChoixFormat.SelectedItem as Choix)?.Valeur ?? "mp3" : "mp3";
         Ecrire("");
-        Ecrire($"Lecture du lien Spotify {adresse}");
-        if (ChoixAudio.IsChecked != true) Ecrire("Un lien Spotify ne donne que du son, les fichiers seront en MP3.");
+        Ecrire($"Lecture du lien {source} {adresse}");
+        if (ChoixAudio.IsChecked != true) Ecrire($"Un lien {source} ne donne que du son, les fichiers seront en MP3.");
 
         // Premier temps, la description des morceaux. La source la plus rapide d'abord, la page publique de Spotify.
-        Etat("Lecture du lien Spotify…", annoncer: true);
+        Etat($"Lecture du lien {source}…", annoncer: true);
         BarreProgression.IsIndeterminate = true;
         BarreProgression.Visibility = Visibility.Visible;
-        List<Morceau> morceaux = [];
-        var incomplete = false;
-        try
-        {
-            using var client = MiseAJourDesOutils.NouveauClient();
-            using var delai = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            (morceaux, incomplete) = await PageSpotify.LireAsync(client, adresse, delai.Token);
-            if (morceaux.Count > 0) Ecrire($"Lu sur la page publique de Spotify, {morceaux.Count} {(morceaux.Count > 1 ? "morceaux" : "morceau")}.");
-        }
-        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or InvalidOperationException)
-        {
-            Ecrire($"La page publique de Spotify n'a pas pu être lue. {ex.Message}");
-        }
+        List<Morceau> morceaux;
+        bool incomplete;
+        using (var client = MiseAJourDesOutils.NouveauClient())
+            (morceaux, incomplete) = await LireUnLienSpotifyAsync(client, adresse);
 
-        // Recours, spotDL. Bien plus lent, mais il passe par le service officiel de Spotify et lit tout.
-        if ((morceaux.Count == 0 || incomplete) && !_annulationDemandee && SpotDl.Trouver() is { } spotdl)
+        // Recours quand ni le compte ni la page publique n'ont rien donné, spotDL. Bien plus lent, mais il passe par le service
+        // officiel de Spotify et lit tout. Ici il faut l'attendre, il n'y a rien d'autre à télécharger d'ici là.
+        if (morceaux.Count == 0 && !_annulationDemandee && source == "Spotify" && SpotDl.Trouver() is { } spotdl)
         {
-            Ecrire(incomplete
-                ? "Grande playlist. Lecture complète par spotDL, cela peut prendre plusieurs minutes."
-                : "Lecture par spotDL, cela peut prendre plusieurs minutes.");
+            Ecrire("Lecture par spotDL, cela peut prendre plusieurs minutes.");
             SpotDl.EffacerLesMorceaux();
             await LancerAsync(SpotDl.Preparer(spotdl, SpotDl.ArgumentsDeLecture(adresse, _complements.Ffmpeg)),
                 "Lecture du lien par spotDL, cela peut prendre plusieurs minutes…", RecevoirLigneDeSpotDl);
@@ -1131,7 +1416,7 @@ public partial class FenetrePrincipale : Window
         {
             BarreProgression.Visibility = Visibility.Collapsed;
             BasculeJournal.IsChecked = true;
-            Terminer("ERREUR", "Ce lien Spotify n'a pas pu être lu, le détail est dans le journal. "
+            Terminer("ERREUR", $"Ce lien {source} n'a pas pu être lu, le détail est dans le journal. "
                                + "Vérifiez que le lien est public, ou essayez le bouton Tout mettre à jour.", Ton.Erreur);
             return;
         }
@@ -1140,26 +1425,115 @@ public partial class FenetrePrincipale : Window
         // où se trouvent les enregistrements officiels, puis YouTube en second recours.
         Ecrire($"{morceaux.Count} {(morceaux.Count > 1 ? "morceaux à télécharger" : "morceau à télécharger")}.");
         var enListe = morceaux.Count > 1;
-        var travaux = new List<Travail>();
-        foreach (var morceau in morceaux)
+
+        Travail Creer(Morceau morceau)
         {
             var element = new ElementDePlaylist(_elements.Count + 1) { Titre = $"{morceau.Artiste} - {morceau.Titre}" };
             _elements.Add(element);
-            travaux.Add(new Travail(element, "introuvable",
-                suivi => YtDlp.ArgumentsPourUnMorceau(morceau, format, dossier, enListe, _complements, surYoutubeMusic: true, suivi),
-                suivi => YtDlp.ArgumentsPourUnMorceau(morceau, format, dossier, enListe, _complements, surYoutubeMusic: false, suivi)));
+            return new Travail(element, "introuvable",
+                suivi => YtDlp.ArgumentsPourUnMorceau(morceau, format, dossier, enListe, _complements, surYoutubeMusic: true, suivi, _qualiteDuSon, _egaliseur),
+                suivi => YtDlp.ArgumentsPourUnMorceau(morceau, format, dossier, enListe, _complements, surYoutubeMusic: false, suivi, _qualiteDuSon, _egaliseur))
+            {
+                // Le nom du fichier est connu d'avance. S'il est déjà dans le dossier, le morceau est sauté sans rien lancer.
+                ChercherExistant = () => YtDlp.MorceauDejaPresent(morceau, format, dossier, enListe),
+            };
         }
 
-        var (fichiers, echecs) = await MenerLaListeAsync(executable, travaux);
+        var travaux = morceaux.Select(Creer).ToList();
+
+        // Grande playlist : la page publique ne donne que les cent premiers titres. Ils partent tout de suite,
+        // et spotDL lit la suite pendant qu'ils se téléchargent, au lieu de faire attendre devant une fenêtre immobile.
+        Task<List<Travail>>? suite = null;
+        if (incomplete && source == "Spotify" && SpotDl.Trouver() is { } outil)
+            suite = LireLaSuiteAsync(outil, adresse, morceaux, Creer);
+
+        var (fichiers, echecs) = await MenerLaListeAsync(executable, travaux, suite);
         ConclureLaListe(fichiers, echecs);
     }
 
+    // Le spotDL qui lit la suite d'une grande playlist pendant que les premiers morceaux se téléchargent.
+    private Process? _lectureEnFond;
+
+    /// <summary>
+    /// Fait lire toute la playlist par spotDL et rend les travaux des morceaux qui ne sont pas déjà partis.
+    /// </summary>
+    private async Task<List<Travail>> LireLaSuiteAsync(string spotdl, string adresse, List<Morceau> dejaPartis, Func<Morceau, Travail> creer)
+    {
+        Ecrire($"Grande playlist. Les {dejaPartis.Count} premiers morceaux partent tout de suite, spotDL lit la suite pendant ce temps.");
+        SpotDl.EffacerLesMorceaux();
+        try
+        {
+            using var processus = new Process { StartInfo = SpotDl.Preparer(spotdl, SpotDl.ArgumentsDeLecture(adresse, _complements.Ffmpeg!)) };
+            processus.OutputDataReceived += (_, e) => Transmettre(e.Data, RecevoirLigneDeSpotDl);
+            processus.ErrorDataReceived += (_, e) => Transmettre(e.Data, RecevoirLigneDeSpotDl);
+            processus.Start();
+            _lectureEnFond = processus;
+            processus.BeginOutputReadLine();
+            processus.BeginErrorReadLine();
+            await processus.WaitForExitAsync();
+        }
+        catch (Exception e) when (e is Win32Exception or InvalidOperationException)
+        {
+            Ecrire($"ERROR: impossible de lancer spotDL pour lire la suite de la playlist. {e.Message}");
+        }
+        finally
+        {
+            _lectureEnFond = null;
+        }
+        if (_annulationDemandee) return [];
+
+        var tous = SpotDl.LireLesMorceaux();
+        SpotDl.EffacerLesMorceaux();
+        // spotDL ne rend pas toujours les morceaux dans l'ordre de la playlist. On reconnaît donc ceux qui sont
+        // déjà partis à leur artiste et à leur titre, pas à leur position. La durée n'entre pas dans la comparaison,
+        // les deux sources l'arrondissent différemment et un même morceau passerait pour deux.
+        static string Cle(Morceau m) => $"{m.Artiste}|{m.Titre}".ToLowerInvariant();
+        var connus = dejaPartis.Select(Cle).ToHashSet();
+        // Un ordre qui ne dépend pas de celui de spotDL, changeant d'une lecture à l'autre : la position dans la
+        // playlist quand il la donne, sinon le numéro de piste, sinon l'ordre alphabétique. Chaque morceau garde
+        // ainsi le même numéro si l'on relance, et son fichier est reconnu.
+        var reste = tous.Where(m => connus.Add(Cle(m)))
+            .OrderBy(m => m.Rang > 0 ? m.Rang : int.MaxValue)
+            .ThenBy(m => m.Piste > 0 ? m.Piste : int.MaxValue)
+            .ThenBy(Cle, StringComparer.Ordinal)
+            .ToList();
+        var rang = dejaPartis.Count;
+        var travaux = new List<Travail>();
+        foreach (var morceau in reste)
+        {
+            rang++;
+            // Même largeur de rang que les premiers, pour que les fichiers se rangent dans l'ordre.
+            travaux.Add(creer(morceau with { Rang = morceau.Rang > 0 ? morceau.Rang : rang, LargeurDuRang = 3 }));
+        }
+        Ecrire(travaux.Count > 0
+            ? $"Suite de la playlist lue, {travaux.Count} morceaux de plus."
+            : "Suite de la playlist lue, il n'y avait rien de plus.");
+        return travaux;
+    }
+
     /// <summary>Lignes de spotDL pendant la lecture du lien. Elles vont au journal, les erreurs en rouge.</summary>
+    // « Found 415 songs in … », que spotDL écrit dès qu'il connaît la taille de la playlist,
+    // bien avant d'avoir fini de lire le détail de chaque titre.
+    [GeneratedRegex(@"Found (\d+) songs")]
+    private static partial Regex TailleAnnoncee();
+
+    // Le nombre de titres de la playlist tel que spotDL l'annonce, quand il dépasse ce qui est déjà dans la file.
+    private int _totalAnnonce;
+
     private void RecevoirLigneDeSpotDl(string brute)
     {
         var ligne = brute.Trim();
         if (ligne.Length == 0) return;
-        Ecrire(ligne.Contains("Error", StringComparison.Ordinal) && !ligne.StartsWith("ERROR", StringComparison.Ordinal) ? "ERROR: " + ligne : ligne);
+        if (_listeMaitrisee && TailleAnnoncee().Match(ligne) is { Success: true } taille
+            && int.TryParse(taille.Groups[1].Value, out var annonce) && annonce > _total)
+        {
+            // L'afficheur compte désormais sur le vrai total, pour qu'on ne croie pas la playlist arrêtée au premier lot.
+            _totalAnnonce = annonce;
+            Etat($"{annonce} titres dans la playlist. Les {_total} premiers sont partis, les {annonce - _total} suivants "
+                 + "arriveront dès que spotDL aura fini de lire leurs détails, ce qui prend plusieurs minutes.", annoncer: true);
+        }
+        Ecrire(ligne.Contains("Error", StringComparison.Ordinal) && !ligne.StartsWith("ERROR", StringComparison.Ordinal) ? "ERROR: " + ligne : ligne,
+            deLOutil: true);
     }
 
     private void RecevoirLigne(string ligne)
@@ -1182,6 +1556,7 @@ public partial class FenetrePrincipale : Window
         {
             // Pour un lien Spotify, une erreur sur un résultat de recherche n'est pas l'échec du morceau, un autre résultat peut convenir.
             if (!_listeMaitrisee) MarquerLElementCourant("erreur");
+            if (ligne.Contains(MarqueDuBlocage, StringComparison.Ordinal)) NoterUnRefusDeYoutube();
         }
         else if (ligne.EndsWith("has already been downloaded", StringComparison.Ordinal))
         {
@@ -1206,7 +1581,7 @@ public partial class FenetrePrincipale : Window
             if (ElementCourant() is { Etat: not "erreur" } element) element.Etat = "assemblage";
             Etat("Assemblage ou conversion en cours…");
         }
-        Ecrire(ligne);
+        Ecrire(ligne, deLOutil: true);
     }
 
     /// <summary>Une ligne de mesure de yt-dlp, déjà découpée. L'ordre des champs est celui du gabarit de YtDlp.</summary>
@@ -1343,16 +1718,25 @@ public partial class FenetrePrincipale : Window
 
     /// <summary>Une ligne d'un travail de liste, précédée de son rang pour s'y retrouver quand cinq avancent ensemble.</summary>
     private void Ecrire(string ligne, int rang) =>
-        Ecrire($"[{rang:00}] {ligne}", enRouge: ligne.StartsWith("ERROR", StringComparison.Ordinal));
+        Ecrire($"[{rang:00}] {ligne}", enRouge: ligne.StartsWith("ERROR", StringComparison.Ordinal), deLOutil: true);
 
-    private void Ecrire(string ligne, bool? enRouge = null)
+    // Un journal sans fin finirait par peser, on ne garde donc que les dernières lignes.
+    private const int LignesGardees = 4000;
+
+    /// <param name="deLOutil">
+    /// Vrai pour une ligne recopiée de yt-dlp ou de spotDL. Quand le journal est plein, ce sont ces lignes-là qui
+    /// partent. Celles que l'application écrit elle-même (ce qui a été lu, pourquoi une voie a été écartée, le
+    /// résultat) restent toujours : une longue playlist à dix de front en chasserait sinon les explications utiles.
+    /// </param>
+    private void Ecrire(string ligne, bool? enRouge = null, bool deLOutil = false)
     {
-        var paragraphe = new Paragraph(new Run(ligne));
+        var paragraphe = new Paragraph(new Run(ligne)) { Tag = deLOutil ? "outil" : null };
         if (enRouge ?? ligne.StartsWith("ERROR", StringComparison.Ordinal))
             paragraphe.Foreground = (Brush)FindResource("Alerte");
         var blocs = Journal.Document.Blocks;
         blocs.Add(paragraphe);
-        while (blocs.Count > 3000) blocs.Remove(blocs.FirstBlock);   // un journal sans fin finirait par peser
+        while (blocs.Count > LignesGardees)
+            blocs.Remove(blocs.FirstOrDefault(b => b.Tag is "outil") ?? blocs.FirstBlock);
         if (Journal.IsVisible) Journal.ScrollToEnd();
     }
 
@@ -1366,6 +1750,9 @@ public partial class FenetrePrincipale : Window
         BasculeElements.Visibility = Visibility.Collapsed;
         _elements.Clear();
         _courant = _total = 0;
+        _totalAnnonce = 0;
+        _refusDeYoutube = 0;
+        _youtubeBloque = false;
         _dejaPresent = false;
         _listeMaitrisee = false;
         foreach (var mesure in new[] { MesureDebit, MesureRecu, MesureReste, MesureEcoule, MesureLiaison, MesureFormat })

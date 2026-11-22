@@ -20,6 +20,14 @@ internal static partial class PageSpotify
     [GeneratedRegex("<script id=\"__NEXT_DATA__\" type=\"application/json\">(.+?)</script>", RegexOptions.Singleline)]
     private static partial Regex Donnees();
 
+    /// <summary>Le type d'un lien Spotify (« track », « album », « playlist ») et son identifiant, ou null s'il n'est pas reconnu.</summary>
+    public static (string Type, string Id)? Identifier(string adresse)
+    {
+        if (!Uri.TryCreate(adresse, UriKind.Absolute, out var uri)) return null;
+        var chemin = Chemin().Match(uri.AbsolutePath);
+        return chemin.Success ? (chemin.Groups[1].Value.ToLowerInvariant(), chemin.Groups[2].Value) : null;
+    }
+
     /// <summary>
     /// Les morceaux du lien, ou une liste vide si la page ne les donne pas (lien d'artiste, forme inattendue).
     /// « PeutEtreIncomplete » signale une playlist dont le nombre de morceaux tombe pile sur un palier rond :
@@ -78,8 +86,24 @@ internal static partial class PageSpotify
                 Liste: nom,
                 rang));
         }
-        return (morceaux, type == "playlist" && morceaux.Count is 50 or 100);
+        // Mesuré sur de grandes playlists publiques : la page s'arrête à cent titres. Une playlist qui en montre
+        // exactement cent en a donc sans doute davantage, et la suite devra être lue autrement.
+        var incomplete = type == "playlist" && morceaux.Count == LimiteDeLaPage;
+
+        // Aide aux essais. Cette variable d'environnement fait comme si la page s'arrêtait plus tôt, ce qui
+        // permet d'essayer le parcours des grandes playlists sur un petit album libre de droits.
+        if (int.TryParse(Environment.GetEnvironmentVariable("DOWNLOAD_EVERYTHING_ESSAI_COUPE"), out var coupe) && coupe > 0 && morceaux.Count > coupe)
+        {
+            morceaux = morceaux.Take(coupe).ToList();
+            incomplete = true;
+        }
+
+        // Trois chiffres pour le rang d'une grande playlist, pour que les fichiers se rangent dans l'ordre.
+        if (incomplete) morceaux = morceaux.Select(m => m with { LargeurDuRang = 3 }).ToList();
+        return (morceaux, incomplete);
     }
+
+    private const int LimiteDeLaPage = 100;
 
     private static string Texte(JsonElement element, string champ) =>
         element.ValueKind == JsonValueKind.Object && element.TryGetProperty(champ, out var valeur) && valeur.ValueKind == JsonValueKind.String

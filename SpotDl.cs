@@ -5,9 +5,13 @@ using System.Text.Json;
 namespace YtDlpInterface;
 
 /// <summary>Un morceau tel que Spotify le décrit. C'est ce qui sert à le retrouver ailleurs, puis à étiqueter le fichier.</summary>
+/// <param name="LargeurDuRang">
+/// Nombre de chiffres du rang dans le nom du fichier. Deux d'ordinaire, trois pour une playlist de plus de
+/// cent titres, pour que « 099 » se range bien avant « 100 ».
+/// </param>
 internal sealed record Morceau(
     string Titre, string Artiste, string Album, string ArtisteDeLAlbum, string Annee,
-    int Piste, int Duree, string Liste, int Rang);
+    int Piste, int Duree, string Liste, int Rang, int LargeurDuRang = 2);
 
 /// <summary>
 /// spotDL sert de recours pour lire un lien Spotify (morceau, album, playlist, artiste) et dire quels morceaux
