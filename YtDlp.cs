@@ -488,6 +488,62 @@ internal static class YtDlp
             : Path.Combine(dossier, NomDuMorceauEnClair(morceau, dansUnSousDossier).Replace('/', Path.DirectorySeparatorChar) + "." + extension);
     }
 
+    // Mots qui n'aident pas à reconnaître un titre : ils figurent ou manquent d'une source à l'autre sans que le morceau change.
+    private static readonly HashSet<string> MotsCreux = new(StringComparer.Ordinal)
+    {
+        "the", "feat", "ft", "and", "vs", "dj", "mix", "original", "version", "remastered", "remaster", "radio", "edit",
+        "official", "video", "audio", "hq", "hd", "lyrics", "lyric", "music", "clip", "officiel",
+    };
+
+    // Mots qui annoncent un autre enregistrement que celui demandé. Ils ne comptent que s'ils manquent au titre attendu.
+    private static readonly string[] MarquesDAutreVersion =
+        ["live", "remix", "cover", "karaoke", "instrumental", "acoustic", "acoustique", "nightcore", "slowed", "sped", "reverb", "8d"];
+
+    /// <summary>Les mots d'un titre, en minuscules et sans accents, quelle que soit la ponctuation qui les sépare.</summary>
+    private static List<string> MotsDuTitre(string titre)
+    {
+        var mots = new List<string>();
+        var mot = new StringBuilder();
+        foreach (var c in titre.Normalize(NormalizationForm.FormD))
+        {
+            // Un accent détaché de sa lettre par la mise en forme ci-dessus est simplement laissé de côté.
+            if (System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) == System.Globalization.UnicodeCategory.NonSpacingMark) continue;
+            if (char.IsLetterOrDigit(c)) mot.Append(char.ToLowerInvariant(c));
+            else if (mot.Length > 0)
+            {
+                mots.Add(mot.ToString());
+                mot.Clear();
+            }
+        }
+        if (mot.Length > 0) mots.Add(mot.ToString());
+        return mots;
+    }
+
+    /// <summary>
+    /// Garde-fou sur le choix d'un morceau. La vidéo est retenue sur sa durée, et deux morceaux différents peuvent
+    /// durer pareil. Mesuré le 22/11/2026 sur 147 morceaux, l'un d'eux avait été remplacé par un morceau au nom
+    /// voisin, d'un autre artiste et de même durée. Rend null quand rien n'inquiète, sinon la raison du doute en
+    /// une phrase courte. Rien n'est refusé ici, le morceau est seulement signalé « à vérifier ».
+    /// </summary>
+    /// <param name="attendu">Le titre du morceau, tel que le catalogue (Spotify, Deezer, Apple Music) le donne.</param>
+    /// <param name="trouve">Le titre de la vidéo que yt-dlp a retenue.</param>
+    public static string? DouteSurLeTitre(string attendu, string trouve)
+    {
+        var tousAttendus = MotsDuTitre(attendu);
+        var tousTrouves = MotsDuTitre(trouve).ToHashSet(StringComparer.Ordinal);
+        if (tousTrouves.Count == 0) return null;   // titre de la vidéo inconnu, rien à comparer
+
+        // Un mot d'une seule lettre ou un mot creux ne prouve rien. S'il ne reste aucun mot utile, on ne juge pas.
+        var utiles = tousAttendus.Where(m => m.Length > 1 && !MotsCreux.Contains(m)).Distinct(StringComparer.Ordinal).ToList();
+        if (utiles.Count == 0) return null;
+        // Moins de la moitié des mots du titre retrouvés dans celui de la vidéo : ce n'est sans doute pas le même morceau.
+        if (utiles.Count(tousTrouves.Contains) * 2 < utiles.Count) return "son titre ne ressemble pas à celui demandé";
+
+        foreach (var marque in MarquesDAutreVersion)
+            if (tousTrouves.Contains(marque) && !tousAttendus.Contains(marque)) return $"elle est annoncée comme « {marque} », ce que le titre demandé ne dit pas";
+        return null;
+    }
+
     /// <summary>
     /// yt-dlp pose la jaquette à côté du futur fichier avant de commencer le transfert, puis l'incruste et
     /// l'efface. Si le transfert échoue, elle reste seule dans le dossier. On la retire, à condition que le

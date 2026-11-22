@@ -716,6 +716,7 @@ public partial class FenetrePrincipale : Window
             _annulationDemandee = false;
             // Une nouvelle demande remplace la précédente, ses manquants ne sont plus proposés.
             _aReprendre = [];
+            _aVerifier.Clear();
             _dossierDeLaListe = dossier;
             BoutonReprendre.Visibility = Visibility.Collapsed;
             _qualiteDuSon = (ChoixQualiteSon.SelectedItem as Choix)?.Valeur ?? "0";
@@ -1174,6 +1175,12 @@ public partial class FenetrePrincipale : Window
         /// <summary>Vrai dès que ce travail a donné son fichier. Les autres sont proposés à la reprise.</summary>
         public bool Reussi;
 
+        /// <summary>Pour un morceau de musique : le titre que le catalogue lui donne, à comparer à celui de la vidéo retenue.</summary>
+        public string? TitreAttendu { get; init; }
+
+        /// <summary>Le titre de la vidéo que yt-dlp est en train de prendre pour ce travail.</summary>
+        public string TitreTrouve = "";
+
         public Process? Processus;
         public double Recu, Total, Debit;   // le fichier en cours de transfert
         public double DejaRecu;             // les fichiers déjà finis de ce travail, l'image avant le son par exemple
@@ -1317,6 +1324,7 @@ public partial class FenetrePrincipale : Window
                     if (_annulationDemandee) break;
                     YtDlp.EffacerLaTrace(suivi);
                     travail.DejaLa = false;
+                    travail.TitreTrouve = "";
                     await LancerUnTravailAsync(executable, tentative(suivi), travail, Montrer);
                     if (YtDlp.LireLaTrace(suivi) is not { Count: > 0 } obtenus) continue;
                     fichier = obtenus[^1];
@@ -1344,7 +1352,14 @@ public partial class FenetrePrincipale : Window
                 {
                     fichiers.Add(fichier);
                     travail.Reussi = true;
-                    travail.Element.Etat = travail.DejaLa ? "déjà là" : "terminé";
+                    // Garde-fou : le morceau est arrivé, mais la vidéo retenue porte-t-elle bien son titre ?
+                    var doute = travail.DejaLa || travail.TitreAttendu is null ? null : YtDlp.DouteSurLeTitre(travail.TitreAttendu, travail.TitreTrouve);
+                    if (doute is not null)
+                    {
+                        _aVerifier.Add((travail.Element.Numero, travail.Element.Titre, travail.TitreTrouve, doute));
+                        Ecrire($"À vérifier, {travail.Element.Titre}. La vidéo retenue s'appelle « {travail.TitreTrouve} », {doute}.", travail.Element.Numero);
+                    }
+                    travail.Element.Etat = travail.DejaLa ? "déjà là" : doute is null ? "terminé" : "à vérifier";
                     travail.Element.Pourcent = 100;
                     faits++;
                 }
@@ -1460,6 +1475,7 @@ public partial class FenetrePrincipale : Window
             if (champs.Length < YtDlp.NombreDeChampsDeMesure) return false;
             var recu = Nombre(champs[2]) ?? 0;
             var total = Nombre(champs[3]) ?? Nombre(champs[4]) ?? 0;
+            if (champs[12] != "NA") travail.TitreTrouve = champs[12];
             // Dans une file de liens, la ligne affichait l'adresse en attendant. Voici le vrai titre.
             if (champs[12] != "NA" && travail.Element.Titre.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 travail.Element.Titre = champs[12];
@@ -1560,10 +1576,17 @@ public partial class FenetrePrincipale : Window
             BarreProgression.Value = BarreProgression.Maximum;
             BarreProgression.SetResourceReference(ForegroundProperty, "Reussite");
             MesureReste.Text = "00:00";
+            var doutes = _aVerifier.Count == 0 ? ""
+                : (_aVerifier.Count > 1
+                      ? $"{_aVerifier.Count} morceaux sont à vérifier, la vidéo retenue ne porte pas leur titre. "
+                      : "1 morceau est à vérifier, la vidéo retenue ne porte pas son titre. ")
+                  + $"Marqués dans la liste et notés dans « {FichierDesDoutes} ».";
             if (echecs > 0)
                 Terminer("TERMINÉ", $"{fichiers.Count} {(fichiers.Count > 1 ? "reçus" : "reçu")}, {echecs} en échec. "
-                                    + $"Le bouton Reprendre {(echecs > 1 ? "les" : "le")} retente, le détail est dans la liste et dans le journal.",
+                                    + $"Le bouton Reprendre {(echecs > 1 ? "les" : "le")} retente, le détail est dans la liste et dans le journal. " + doutes,
                     Ton.Erreur, motEnVert: true);
+            else if (doutes.Length > 0)
+                Terminer("TERMINÉ", doutes, Ton.Neutre, motEnVert: true);
             else
                 Terminer("TERMINÉ", "", Ton.Reussite);
         }
@@ -1576,6 +1599,52 @@ public partial class FenetrePrincipale : Window
             Terminer("ERREUR", "Rien n'a pu être téléchargé, le détail est dans le journal.", Ton.Erreur);
         }
         ProposerLaReprise();
+        NoterLesTitresAVerifier();
+    }
+
+    // ───────────────────────────── Morceaux à vérifier ─────────────────────────────
+
+    // Les morceaux arrivés dont la vidéo retenue ne porte pas le titre demandé, depuis la dernière demande.
+    private readonly List<(int Numero, string Attendu, string Trouve, string Raison)> _aVerifier = [];
+
+    private const string FichierDesDoutes = "Titres à vérifier.txt";
+    private const string EnTeteDesDoutes = "Download Everything, titres à vérifier";
+
+    /// <summary>
+    /// Écrit dans le dossier la liste des morceaux à vérifier, avec le titre de la vidéo qui a été prise à leur place
+    /// peut-être. Rien n'est supprimé ni refusé : c'est à l'oreille de trancher. Sans doute à noter, le fichier
+    /// d'une fois précédente est retiré, s'il est bien le nôtre.
+    /// </summary>
+    private void NoterLesTitresAVerifier()
+    {
+        if (_dossierDeLaListe.Length == 0) return;
+        var chemin = Path.Combine(_dossierDeLaListe, FichierDesDoutes);
+        try
+        {
+            if (_aVerifier.Count == 0)
+            {
+                if (File.Exists(chemin) && (File.ReadLines(chemin).FirstOrDefault() ?? "").StartsWith(EnTeteDesDoutes, StringComparison.Ordinal))
+                    File.Delete(chemin);
+                return;
+            }
+            var lignes = new List<string>
+            {
+                $"{EnTeteDesDoutes} du {DateTime.Now.ToString("dd/MM/yyyy", Francais)} à {DateTime.Now.ToString("HH'h'mm", Francais)}",
+                "Ces morceaux ont été téléchargés, mais la vidéo retenue ne porte pas le titre demandé.",
+                "Écoutez-les : si ce n'est pas le bon morceau, supprimez le fichier et cherchez-le à la main.",
+                "",
+            };
+            foreach (var (numero, attendu, trouve, raison) in _aVerifier)
+            {
+                lignes.Add($"{numero:000}  {attendu}");
+                lignes.Add($"     vidéo retenue : {trouve}  ({raison})");
+            }
+            File.WriteAllLines(chemin, lignes, System.Text.Encoding.UTF8);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Le fichier n'est qu'un aide-mémoire, la liste à l'écran et le journal disent la même chose.
+        }
     }
 
     // ───────────────────────────── Reprise des manquants ─────────────────────────────
@@ -2166,6 +2235,7 @@ public partial class FenetrePrincipale : Window
                     suivi => YtDlp.ArgumentsPourUnMorceau(morceau, formatDuSon, dossier, enListe, _complements, surYoutubeMusic: false, suivi, _qualiteDuSon, _egaliseur))
                 {
                     CheminAttendu = YtDlp.CheminAttenduDuMorceau(morceau, formatDuSon, dossier, enListe),
+                    TitreAttendu = morceau.Titre,
                 });
             }
         }
@@ -2435,6 +2505,7 @@ public partial class FenetrePrincipale : Window
                 // Le nom du fichier est connu d'avance. S'il est déjà dans le dossier, le morceau est sauté sans rien lancer.
                 ChercherExistant = () => YtDlp.MorceauDejaPresent(morceau, format, dossier, enListe),
                 CheminAttendu = YtDlp.CheminAttenduDuMorceau(morceau, format, dossier, enListe),
+                TitreAttendu = morceau.Titre,
             };
         }
 

@@ -21,6 +21,7 @@ internal static class EssaiSansEcran
                 [_, "outils"] => await OutilsAsync(),
                 [_, "telecharger", var adresse, var dossier, ..] => await TelechargerAsync(adresse, dossier, args.Contains("audio")),
                 [_, "torrent", var adresse, var dossier, ..] => await TorrentAsync(adresse, dossier),
+                [_, "doutes", var fichier, ..] => Doutes(fichier),
                 _ => Dire(2, "Usage : --essai outils | --essai telecharger ADRESSE DOSSIER [audio] | --essai torrent ADRESSE DOSSIER"),
             };
         }
@@ -83,6 +84,25 @@ internal static class EssaiSansEcran
         using var client = MiseAJourDesOutils.NouveauClient();
         var fichier = await FichierDirect.TelechargerAsync(client, adresse, dossier, new Progress<MiseAJourDesOutils.Avancement>(_ => { }), CancellationToken.None);
         return fichier is null ? Dire(1, "RIEN : aucun des trois étages n'a rien pris") : Dire(0, "RECU tel quel : " + fichier);
+    }
+
+    /// <summary>
+    /// Rejoue le garde-fou des titres sur des cas réels : une ligne par morceau, le titre attendu, une tabulation,
+    /// puis le titre de la vidéo qui avait été retenue. Écrit ceux qui seraient signalés.
+    /// </summary>
+    private static int Doutes(string fichier)
+    {
+        var signales = 0;
+        var lignes = File.ReadAllLines(fichier).Where(l => l.Contains('\t')).ToList();
+        foreach (var ligne in lignes)
+        {
+            var (attendu, trouve) = (ligne.Split('\t')[0], ligne.Split('\t')[1]);
+            if (YtDlp.DouteSurLeTitre(attendu, trouve) is not { } raison) continue;
+            signales++;
+            Console.WriteLine($"A VERIFIER : {attendu}  ->  {trouve}  ({raison})");
+        }
+        Console.WriteLine($"{signales} signalé(s) sur {lignes.Count}");
+        return 0;
     }
 
     /// <summary>Le même chemin que la vue des torrents : aria2 lancé en service, le torrent ajouté, puis suivi chaque seconde.</summary>

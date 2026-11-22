@@ -18,6 +18,7 @@ Download Everything est une façade graphique pour [yt-dlp](https://github.com/y
 - Fichiers ordinaires. Une adresse qui mène à un PDF, une archive ou un document est téléchargée telle quelle.
 - Reprise sans doublon. Un morceau déjà présent dans le dossier n'est pas repris.
 - Reprise des manquants. À la fin d'une liste, un bouton relance seulement ce qui n'a pas abouti, et les titres introuvables sont notés dans « Titres manquants.txt ».
+- Morceaux à vérifier. Un morceau est retenu sur sa durée, et deux morceaux différents peuvent durer pareil. Quand le titre de la vidéo retenue ne ressemble pas au titre demandé, ou qu'elle s'annonce comme un live, un remix ou une reprise, le morceau est marqué « à vérifier » et noté dans « Titres à vérifier.txt ». Rien n'est refusé, c'est à l'oreille de trancher.
 - Un lien se glisse sur la fenêtre, ou se copie simplement. Si le presse-papiers ne contient que des adresses web, elles sont placées dans le champ quand la fenêtre revient au premier plan. Rien n'est lancé sans clic.
 - Fenêtre réglable. Tirer un côté fait grossir ou rétrécir tout le contenu, la taille est retenue.
 - Mesures en direct, débit, volume reçu, temps restant.
@@ -62,11 +63,11 @@ Windows 10 ou 11, 64 bits.
 
 ## Installation sous Linux (Debian, Ubuntu)
 
-1. Télécharger `download-everything_1.2.0_amd64.deb` depuis la page [Releases](../../releases).
+1. Télécharger `download-everything_1.2.1_amd64.deb` depuis la page [Releases](../../releases).
 2. L'installer, ce qui amène aussi ce dont il a besoin (ffmpeg, aria2, les bibliothèques graphiques) :
 
 ```
-sudo apt install ./download-everything_1.2.0_amd64.deb
+sudo apt install ./download-everything_1.2.1_amd64.deb
 ```
 
 L'application apparaît dans le menu sous le nom « Download Everything ». À la première ouverture elle télécharge yt-dlp, Deno et gallery-dl depuis leurs dépôts officiels, empreinte contrôlée, et les range dans `~/.local/share/download-everything`. Il faut donc être connecté à Internet ce jour-là.
