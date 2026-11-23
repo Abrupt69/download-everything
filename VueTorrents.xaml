@@ -12,9 +12,32 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="176"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="190"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
+        <Grid.Resources>
+            <!-- Le nom d'un fichier se clique pour le montrer dans son dossier. Il s'éclaire en ambre au survol. -->
+            <Style x:Key="LienDeFichier" TargetType="Button">
+                <Setter Property="Foreground" Value="{StaticResource Texte}"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="FocusVisualStyle" Value="{StaticResource ContourFocus}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="Transparent">
+                                <TextBlock x:Name="Nom" Text="{Binding Nom}" FontSize="13" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Nom" Property="Foreground" Value="{StaticResource Signal}"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+        </Grid.Resources>
 
         <!-- SOURCE. Un lien magnet ou l'adresse d'un fichier .torrent. Un fichier .torrent se glisse sur la fenêtre. -->
         <Border Style="{StaticResource Ligne}">
@@ -63,7 +86,8 @@
             <Grid>
                 <TextBlock x:Name="TexteVide" TextWrapping="Wrap" Margin="8,16,8,0" Foreground="{StaticResource TexteDoux}"
                            Text="Aucun torrent pour l'instant. Collez un lien magnet ou l'adresse d'un fichier .torrent ci-dessus, ou glissez un fichier .torrent sur la fenêtre."/>
-                <ListBox x:Name="Liste" Background="Transparent" BorderThickness="0" Padding="0"
+                <!-- Couleur du texte donnée ici : sans le thème Fluent, une liste prendrait celle de Windows, noire sur ce fond. -->
+                <ListBox x:Name="Liste" Background="Transparent" BorderThickness="0" Padding="0" Foreground="{StaticResource Texte}"
                          HorizontalContentAlignment="Stretch" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          SelectionChanged="ChoisirUnTorrent" AutomationProperties.Name="Torrents">
                     <ListBox.Template>
@@ -169,8 +193,43 @@
                        Foreground="{StaticResource TexteDoux}" AutomationProperties.LiveSetting="Polite"/>
         </Grid>
 
+        <!-- MORCEAUX. Un torrent arrive en morceaux, dans le désordre et de plusieurs pairs à la fois. Chaque case
+             regroupe quelques morceaux et s'allume à mesure qu'ils arrivent. À droite, ce qu'on a envoyé aux autres. -->
+        <Grid Grid.Row="4" Margin="0,2,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Style="{StaticResource Etiquette}" Text="MORCEAUX" Margin="0,0,12,0"
+                       ToolTip="Un torrent se découpe en morceaux de même taille, reçus dans le désordre. Chaque case en regroupe quelques-uns."/>
+            <TextBlock x:Name="TexteMorceaux" Grid.Column="1" FontFamily="Bahnschrift" FontSize="12" VerticalAlignment="Center"
+                       Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TexteDoux}" TextTrimming="CharacterEllipsis"/>
+            <TextBlock x:Name="TexteEnvoye" Grid.Column="2" FontFamily="Bahnschrift" FontSize="12" VerticalAlignment="Center"
+                       Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TexteDoux}"
+                       ToolTip="Ce que ce torrent a envoyé aux autres, et le rapport entre l'envoyé et le reçu"/>
+            <ItemsControl x:Name="Mosaique" Grid.Row="1" Grid.ColumnSpan="3" Margin="0,6,0,0" Focusable="False"
+                          AutomationProperties.Name="Mosaïque des morceaux">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Rows="1"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <!-- Sans espace entre les cases : les morceaux reçus d'affilée forment une bande continue. -->
+                        <Border Height="10" Background="{StaticResource Signal}" Opacity="{Binding Allumage}"/>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Grid>
+
         <!-- Détail du torrent choisi : ses fichiers à gauche, ses pairs à droite, plus larges pour leurs adresses. -->
-        <Grid Grid.Row="4">
+        <Grid Grid.Row="5">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="2*"/>
                 <ColumnDefinition Width="24"/>
@@ -185,10 +244,11 @@
                 <Grid Margin="0,8,0,6">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="48"/>
-                        <ColumnDefinition Width="68"/>
+                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="62"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="TitreFichiers" Style="{StaticResource Etiquette}" Text="FICHIERS"/>
+                    <TextBlock x:Name="TitreFichiers" Style="{StaticResource Etiquette}" Text="FICHIERS"
+                               ToolTip="Un clic sur un fichier le montre dans son dossier"/>
                     <TextBlock Grid.Column="1" Style="{StaticResource Etiquette}" Text="REÇU"/>
                     <TextBlock Grid.Column="2" Style="{StaticResource Etiquette}" Text="TAILLE"/>
                 </Grid>
@@ -202,13 +262,16 @@
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="48"/>
-                                                <ColumnDefinition Width="68"/>
+                                                <ColumnDefinition Width="42"/>
+                                                <ColumnDefinition Width="62"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding Nom}" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Nom}"/>
-                                            <TextBlock Grid.Column="1" Text="{Binding Part}" FontFamily="Bahnschrift" FontSize="12.5" VerticalAlignment="Center"
+                                            <Button Style="{StaticResource LienDeFichier}" Margin="0,0,10,0" Click="MontrerUnFichier"
+                                                    ToolTip="{Binding Chemin}" AutomationProperties.Name="{Binding Nom}"/>
+                                            <ProgressBar Grid.Column="1" Height="4" Margin="0,0,8,0" Minimum="0" Maximum="100" Value="{Binding Pourcent}"
+                                                         VerticalAlignment="Center" Style="{StaticResource Avancement}"/>
+                                            <TextBlock Grid.Column="2" Text="{Binding Part}" FontFamily="Bahnschrift" FontSize="12.5" VerticalAlignment="Center"
                                                        Typography.NumeralAlignment="Tabular"/>
-                                            <TextBlock Grid.Column="2" Text="{Binding Taille}" FontFamily="Bahnschrift" FontSize="12.5" VerticalAlignment="Center"
+                                            <TextBlock Grid.Column="3" Text="{Binding Taille}" FontFamily="Bahnschrift" FontSize="12.5" VerticalAlignment="Center"
                                                        Typography.NumeralAlignment="Tabular" Foreground="{StaticResource TexteDoux}"/>
                                         </Grid>
                                     </Border>
@@ -232,11 +295,13 @@
                         <ColumnDefinition Width="62"/>
                         <ColumnDefinition Width="48"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock x:Name="TitrePairs" Style="{StaticResource Etiquette}" Text="PAIRS RELIÉS"/>
+                    <TextBlock x:Name="TitrePairs" Style="{StaticResource Etiquette}" Text="PAIRS RELIÉS"
+                               ToolTip="Le pays de chaque pair, lu sur ce poste dans la base de DB-IP. Son adresse au survol."/>
                     <TextBlock Grid.Column="1" Style="{StaticResource Etiquette}" Text="LOGICIEL"/>
                     <TextBlock Grid.Column="2" Style="{StaticResource Etiquette}" Text="NOUS ENVOIE"/>
                     <TextBlock Grid.Column="3" Style="{StaticResource Etiquette}" Text="REÇOIT"/>
-                    <TextBlock Grid.Column="4" Style="{StaticResource Etiquette}" Text="RÔLE"/>
+                    <TextBlock Grid.Column="4" Style="{StaticResource Etiquette}" Text="IL A"
+                               ToolTip="La part du torrent que ce pair a déjà. « source » quand il l'a en entier."/>
                 </Grid>
                 <Border Grid.Row="1" BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
@@ -252,8 +317,8 @@
                                                 <ColumnDefinition Width="62"/>
                                                 <ColumnDefinition Width="48"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding Adresse}" FontFamily="Bahnschrift" FontSize="12.5" Margin="0,0,8,0" VerticalAlignment="Center"
-                                                       Typography.NumeralAlignment="Tabular" TextTrimming="CharacterEllipsis" ToolTip="{Binding Adresse}"/>
+                                            <TextBlock Text="{Binding Pays}" FontSize="12.5" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Adresse}"/>
                                             <TextBlock Grid.Column="1" Text="{Binding Logiciel}" FontSize="12.5" Margin="0,0,8,0" VerticalAlignment="Center"
                                                        Foreground="{StaticResource TexteDoux}" TextTrimming="CharacterEllipsis"/>
                                             <TextBlock Grid.Column="2" Text="{Binding Recoit}" FontFamily="Bahnschrift" FontSize="12.5" VerticalAlignment="Center"
@@ -273,14 +338,23 @@
         </Grid>
 
         <!-- Bas de la vue. Où vont les fichiers, les débits de l'ensemble, et l'outil. -->
-        <Grid Grid.Row="5" Margin="0,10,0,10">
+        <Grid Grid.Row="6" Margin="0,10,0,10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             <TextBlock x:Name="TexteRangement" FontSize="12" Foreground="{StaticResource TexteEtiquette}" TextTrimming="CharacterEllipsis"/>
             <TextBlock x:Name="TexteEnsemble" Grid.Column="1" Margin="16,0,0,0" FontFamily="Bahnschrift" FontSize="12"
                        Foreground="{StaticResource TexteEtiquette}" Typography.NumeralAlignment="Tabular"/>
+            <!-- Mention demandée par la licence de la base des pays (CC BY 4.0) : DB-IP, avec un lien vers son site. -->
+            <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0" FontSize="11.5" Foreground="{StaticResource TexteEtiquette}">
+                <Run Text="Pays des pairs d'après"/>
+                <Hyperlink NavigateUri="https://db-ip.com" RequestNavigate="OuvrirLeSiteDeDbIp" Foreground="{StaticResource TexteDoux}">IP Geolocation by DB-IP</Hyperlink>
+            </TextBlock>
         </Grid>
     </Grid>
 </UserControl>

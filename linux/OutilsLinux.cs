@@ -11,7 +11,6 @@ namespace YtDlpInterface;
 /// </summary>
 internal static partial class MiseAJourDesOutils
 {
-    private const string DepotYtDlp = "yt-dlp/yt-dlp";
     private const string FichierYtDlpLinux = "yt-dlp_linux";
     private const string ArchiveDenoLinux = "deno-x86_64-unknown-linux-gnu.zip";
 

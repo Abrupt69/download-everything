@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Net.Http;
@@ -19,6 +20,7 @@ internal static partial class MiseAJourDesOutils
     public sealed record Avancement(string Message, long Recu, long Total);
 
     // Les seules adresses d'où un fichier peut venir. Une adresse d'archive qui ne commence pas ainsi est refusée.
+    private const string DepotYtDlp = "yt-dlp/yt-dlp";
     private const string DepotFfmpeg = "yt-dlp/FFmpeg-Builds";
     private const string DepotDeno = "denoland/deno";
     private const string DepotSpotDl = "spotDL/spotify-downloader";
@@ -204,6 +206,119 @@ internal static partial class MiseAJourDesOutils
 #endif
         NoterVersion("gallery-dl", numero);
         return $"gallery-dl mis à jour (version {numero.TrimStart('v')}).";
+    }
+
+    // ───────────────────────────── Vérification quotidienne ─────────────────────────────
+
+    /// <summary>Ce que la vérification quotidienne a trouvé : la version de yt-dlp publiée, et les autres outils en retard.</summary>
+    public sealed record Bilan(string YtDlpPublie, List<string> AutresEnRetard);
+
+    // Une vérification par jour suffit : yt-dlp publie au plus quelques versions par mois. Un peu moins de 24 heures,
+    // pour qu'une ouverture le matin suive bien celle de la veille au matin.
+    private static readonly TimeSpan IntervalleDeVerification = TimeSpan.FromHours(20);
+
+    /// <summary>Vrai quand la dernière vérification date de moins d'un jour.</summary>
+    public static bool VerifieRecemment()
+    {
+        var notee = LireVersions().GetValueOrDefault("derniere-verification");
+        return DateTime.TryParse(notee, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var quand)
+               && DateTime.Now - quand < IntervalleDeVerification;
+    }
+
+    /// <summary>Les outils trouvés en retard à la dernière vérification, notés pour être signalés sans redemander.</summary>
+    public static List<string> EnRetardNotes() =>
+        (LireVersions().GetValueOrDefault("en-retard") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    /// <summary>Note la vérification du jour et ce qui reste en retard.</summary>
+    public static void NoterLaVerification(IEnumerable<string> enRetard)
+    {
+        NoterVersion("derniere-verification", DateTime.Now.ToString("o", CultureInfo.InvariantCulture));
+        NoterVersion("en-retard", string.Join(',', enRetard));
+    }
+
+    /// <summary>
+    /// Demande à chaque dépôt officiel sa dernière version, sans rien télécharger d'autre. Un outil dont la version
+    /// installée n'est pas notée n'est pas signalé : sans point de comparaison, on ne crie pas au retard.
+    /// </summary>
+    public static async Task<Bilan> ComparerAsync(HttpClient client, CancellationToken arret)
+    {
+        using var ytdlp = await DerniereVersionAsync(client, DepotYtDlp, arret);
+        var publie = ytdlp.RootElement.GetProperty("tag_name").GetString() ?? "";
+
+        var notees = LireVersions();
+        var enRetard = new List<string>();
+        async Task Comparer(string nom, string cle, Func<Task<string>> publiee)
+        {
+            if (notees.GetValueOrDefault(cle) is not { Length: > 0 } installee) return;
+            try
+            {
+                if (await publiee() is { Length: > 0 } derniere && derniere != installee) enRetard.Add(nom);
+            }
+            catch (Exception e) when (e is HttpRequestException or JsonException or KeyNotFoundException or InvalidDataException)
+            {
+                // Un dépôt qui ne répond pas ce jour-là : on n'en conclut rien.
+            }
+        }
+
+        async Task<string> Etiquette(string depot)
+        {
+            using var version = await DerniereVersionAsync(client, depot, arret);
+            return version.RootElement.GetProperty("tag_name").GetString() ?? "";
+        }
+
+#if PORTABLE
+        if (Plateforme.Windows)
+#endif
+        {
+            // ffmpeg republie la même étiquette à chaque construction : c'est la date de l'archive qui fait foi.
+            await Comparer("ffmpeg", "ffmpeg", async () =>
+            {
+                using var version = await DerniereVersionAsync(client, DepotFfmpeg, arret);
+                return Piece(version, ArchiveFfmpeg).GetProperty("updated_at").GetString() ?? "";
+            });
+            await Comparer("spotDL", "spotdl", () => Etiquette(DepotSpotDl));
+        }
+        await Comparer("Deno", "deno", () => Etiquette(DepotDeno));
+        await Comparer("gallery-dl", "gallery-dl", async () =>
+        {
+            using var reponse = await client.GetAsync($"{Codeberg}/api/v1/repos/{DepotGalleryDl}/releases/latest", arret);
+            reponse.EnsureSuccessStatusCode();
+            using var version = JsonDocument.Parse(await reponse.Content.ReadAsStringAsync(arret));
+            return version.RootElement.GetProperty("tag_name").GetString() ?? "";
+        });
+        return new Bilan(publie, enRetard);
+    }
+
+    /// <summary>
+    /// Remplace yt-dlp par sa dernière version publiée, empreinte contrôlée par le fichier SHA2-256SUMS que son dépôt
+    /// publie. C'est la mise à jour automatique : elle ne passe pas par « yt-dlp -U », pour pouvoir dire exactement ce
+    /// qui a été vérifié, et ne se lance que quand aucun yt-dlp ne tourne.
+    /// </summary>
+    public static async Task<string> YtDlpAsync(HttpClient client, IProgress<Avancement> avancement, CancellationToken arret)
+    {
+#if PORTABLE
+        var piece = Plateforme.Windows ? "yt-dlp.exe" : FichierYtDlpLinux;
+#else
+        const string piece = "yt-dlp.exe";
+#endif
+        Directory.CreateDirectory(YtDlp.DossierOutils);
+        using var version = await DerniereVersionAsync(client, DepotYtDlp, arret);
+        var numero = version.RootElement.GetProperty("tag_name").GetString() ?? "";
+        var recu = await TelechargerAsync(client, Piece(version, piece), DepotYtDlp, "yt-dlp", avancement, arret);
+        // Une ligne « empreinte  nom » par fichier publié. Le nom est comparé en entier, yt-dlp_x86.exe ne doit pas passer pour l'autre.
+        var sommes = await client.GetStringAsync(Adresse(Piece(version, "SHA2-256SUMS"), DepotYtDlp), arret);
+        var ligne = sommes.Split('\n').FirstOrDefault(l =>
+            l.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries) is [_, var nom] && nom.TrimStart('*') == piece) ?? "";
+        await VerifierAsync(recu, Empreinte().Match(ligne).Value, "yt-dlp", arret);
+
+        arret.ThrowIfCancellationRequested();
+        var cible = Path.Combine(YtDlp.DossierOutils, YtDlp.NomExecutable);
+        File.Move(recu, cible, overwrite: true);
+#if PORTABLE
+        Plateforme.RendreExecutable(cible);
+#endif
+        NoterVersion("yt-dlp", numero);
+        return numero;
     }
 
     public static void Nettoyer()

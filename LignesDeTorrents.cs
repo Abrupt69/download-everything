@@ -70,20 +70,38 @@ internal sealed class LigneDeTorrent(string gid) : Observable
     public string Erreur = "";
 }
 
-/// <summary>Un fichier du torrent choisi.</summary>
+/// <summary>Un fichier du torrent choisi : où il est rangé, et où il en est.</summary>
 internal sealed class LigneDeFichier : Observable
 {
-    private string _nom = "", _part = "", _taille = "";
+    private string _nom = "", _part = "", _taille = "", _chemin = "";
+    private double _pourcent;
     public string Nom { get => _nom; set => Changer(ref _nom, value); }
     public string Part { get => _part; set => Changer(ref _part, value); }
     public string Taille { get => _taille; set => Changer(ref _taille, value); }
+    public double Pourcent { get => _pourcent; set => Changer(ref _pourcent, value); }
+
+    /// <summary>Le chemin complet du fichier sur le disque, montré au survol et ouvert au clic.</summary>
+    public string Chemin { get => _chemin; set => Changer(ref _chemin, value); }
+}
+
+/// <summary>
+/// Une case de la mosaïque des morceaux. Elle regroupe quelques morceaux du torrent, et s'allume à mesure qu'ils
+/// arrivent : presque éteinte quand rien n'est reçu, pleine quand tout l'est.
+/// </summary>
+internal sealed class CaseDeMorceaux : Observable
+{
+    private double _allumage = 0.12;
+    public double Allumage { get => _allumage; set => Changer(ref _allumage, value); }
 }
 
 /// <summary>Un pair relié au torrent choisi.</summary>
 internal sealed class LigneDePair : Observable
 {
-    private string _adresse = "", _logiciel = "", _recoit = "", _envoie = "", _role = "";
+    private string _adresse = "", _logiciel = "", _recoit = "", _envoie = "", _role = "", _pays = "";
     public string Adresse { get => _adresse; set => Changer(ref _adresse, value); }
+
+    /// <summary>Le pays du pair, lu dans la table embarquée (DB-IP), ou son adresse quand le pays est inconnu.</summary>
+    public string Pays { get => _pays; set => Changer(ref _pays, value); }
     public string Logiciel { get => _logiciel; set => Changer(ref _logiciel, value); }
     public string Recoit { get => _recoit; set => Changer(ref _recoit, value); }
     public string Envoie { get => _envoie; set => Changer(ref _envoie, value); }

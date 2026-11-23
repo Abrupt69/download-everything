@@ -444,6 +444,15 @@
                                      AutomationProperties.Name="Vue, torrents"
                                      ToolTip="Liens magnet et fichiers .torrent, avec leurs sources et leurs pairs">
                             <RadioButton.Tag>
+                                <CornerRadius>0</CornerRadius>
+                            </RadioButton.Tag>
+                        </RadioButton>
+                        <!-- L'historique ferme la rangée : on y regarde ce qui a été fait, on n'y télécharge rien. -->
+                        <RadioButton x:Name="ChoixVueHistorique" Style="{StaticResource Touche}" GroupName="Vue" Content="Historique" Margin="-1,0,0,0"
+                                     Width="104" Height="30" FontSize="13" Checked="ChangerDeVue"
+                                     AutomationProperties.Name="Vue, historique"
+                                     ToolTip="Tout ce qui a été téléchargé, avec une recherche, le dossier de chaque fichier, et l'adresse d'origine à relancer">
+                            <RadioButton.Tag>
                                 <CornerRadius>0,2,2,0</CornerRadius>
                             </RadioButton.Tag>
                         </RadioButton>
@@ -844,6 +853,70 @@
 
             <!-- Vue des torrents, posée ici par le code à la première visite (voir ChangerDeVue). -->
             <Border x:Name="ZoneTorrents" Visibility="Collapsed"/>
+
+            <!-- Vue de l'historique. Une recherche, puis les téléchargements du plus récent au plus ancien. Chaque ligne
+                 ouvre son dossier ou remet son adresse d'origine dans le champ. Un fichier déplacé depuis s'éteint. -->
+            <StackPanel x:Name="ZoneHistorique" Visibility="Collapsed">
+                <Border Style="{StaticResource Ligne}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="112"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Style="{StaticResource Etiquette}" Text="RECHERCHE"/>
+                        <TextBox x:Name="ChampRechercheHistorique" Grid.Column="2" Style="{StaticResource ChampEncadre}"
+                                 TextChanged="FiltrerLHistorique" AutomationProperties.Name="Chercher dans l'historique"
+                                 ToolTip="Un mot du titre, un site (youtube, deezer…) ou un genre (son, vidéo, image, torrent)"/>
+                        <Button x:Name="BoutonEffacerHistorique" Grid.Column="3" Style="{StaticResource BoutonTexte}" Margin="8,0,-12,0"
+                                Foreground="{StaticResource TexteDoux}" Content="Effacer l'historique" Click="EffacerLHistorique"
+                                ToolTip="Efface la liste. Les fichiers téléchargés ne sont pas touchés."/>
+                    </Grid>
+                </Border>
+
+                <TextBlock x:Name="CompteHistorique" Style="{StaticResource TitreDeGroupe}" Margin="0,14,0,8"/>
+
+                <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0" Margin="0,0,0,8">
+                    <Grid>
+                        <TextBlock x:Name="TexteHistoriqueVide" TextWrapping="Wrap" Margin="128,16,0,16" Foreground="{StaticResource TexteDoux}"
+                                   Visibility="Collapsed"/>
+                        <ScrollViewer MaxHeight="440" VerticalScrollBarVisibility="Auto" Focusable="False">
+                            <ItemsControl x:Name="ListeHistorique" Focusable="False" AutomationProperties.Name="Historique des téléchargements">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,0,0,1" Padding="0,6" Opacity="{Binding Opacite}">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="112"/>
+                                                    <ColumnDefinition Width="16"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Date}" FontFamily="Bahnschrift" FontSize="13" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource TexteDoux}" Typography.NumeralAlignment="Tabular"/>
+                                                <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Titre}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Chemin}"/>
+                                                    <TextBlock Text="{Binding Detail}" FontSize="12" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"
+                                                               Foreground="{StaticResource TexteEtiquette}"/>
+                                                </StackPanel>
+                                                <Button Grid.Column="3" Style="{StaticResource BoutonTexte}" Height="32" Margin="8,0,0,0"
+                                                        Content="Dossier" Click="MontrerDepuisLHistorique"
+                                                        AutomationProperties.Name="{Binding Titre, StringFormat='Ouvrir le dossier de {0}'}"/>
+                                                <Button Grid.Column="4" Style="{StaticResource BoutonTexte}" Height="32" Margin="0,0,-12,0"
+                                                        Content="Relancer" Click="RelancerDepuisLHistorique"
+                                                        AutomationProperties.Name="{Binding Titre, StringFormat='Relancer {0}'}"
+                                                        ToolTip="Remet l'adresse d'origine dans le champ, dans la bonne vue. Rien ne part sans clic."/>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+            </StackPanel>
 
             <!-- Pied. D'abord les outils : leurs versions, et le bouton qui les met à jour, à côté de ce qu'il change. -->
             <Border BorderBrush="{StaticResource Filet}" BorderThickness="0,1,0,0" MinHeight="44">

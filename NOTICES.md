@@ -13,6 +13,12 @@ L'exécutable distribué dans les versions publiées transporte en plus six prog
 | gallery-dl | images et galeries d'images | GPL version 2 | https://codeberg.org/mikf/gallery-dl |
 | aria2 | torrents et liens magnet | GPL version 2 ou ultérieure | https://github.com/aria2/aria2 |
 
+## Pays des pairs d'un torrent : IP Geolocation by DB-IP
+
+L'application, sous Windows comme sous Linux, transporte aussi des données : une table qui donne le pays d'une adresse IP, pour montrer d'où viennent les pairs d'un torrent. Elle est tirée de la base « IP to Country Lite » de DB-IP (https://db-ip.com), distribuée sous licence Creative Commons Attribution 4.0 International (https://creativecommons.org/licenses/by/4.0/). [IP Geolocation by DB-IP](https://db-ip.com).
+
+La table est réduite à ce dont l'application a besoin, le début de chaque plage d'adresses et son pays, sans autre changement. Elle est préparée par `preparer-pays.ps1`, qui prend le fichier du mois à l'adresse officielle de DB-IP et le compare aux empreintes SHA-1 et MD5 affichées sur sa page de téléchargement. La lecture se fait sur le poste, aucune adresse n'est envoyée nulle part. La vue des torrents cite DB-IP avec un lien vers son site, comme la licence le demande.
+
 ## aria2
 
 aria2 est distribué ici sous la licence publique générale GNU, version 2 ou ultérieure. Le texte de cette licence est déposé avec lui (`LICENCE-aria2.txt`). Le fichier binaire vient, sans modification, de l'archive `aria2-1.37.0-win-64bit-build1.zip` publiée sur le dépôt officiel, où se trouve aussi son code source. Ce dépôt ne publie pas d'empreinte. Celle de l'archive (SHA-256 `67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288`) a été relevée sur le dépôt officiel puis recoupée avec les registres Scoop et winget, qui donnent la même. Elle est fixée dans `preparer-charge.ps1`.

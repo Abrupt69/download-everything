@@ -121,12 +121,59 @@ internal static class Aria2
 internal sealed record FichierLu(string Chemin, double Taille, double Recu);
 
 /// <summary>L'état d'un torrent à un instant donné.</summary>
+/// <param name="Suite">Pour la lecture d'un lien magnet : le numéro du vrai téléchargement qui la remplace, vide sinon.</param>
+/// <param name="Morceaux">Le nombre de morceaux du torrent. Un torrent se découpe en morceaux de même taille, reçus dans le désordre.</param>
+/// <param name="TailleMorceau">La taille d'un morceau, en octets.</param>
+/// <param name="Carte">Les morceaux déjà reçus, un bit par morceau, en hexadécimal comme aria2 l'écrit. Vide au tout début.</param>
+/// <param name="Envoye">Ce qu'on a envoyé aux autres en tout pour ce torrent, en octets.</param>
 internal sealed record TorrentLu(
     string Gid, string Statut, string Nom, double Total, double Recu, double Debit, double Envoi,
-    int Liaisons, int Sources, string Dossier, string Erreur, bool EstUneLecture, bool Suivi, IReadOnlyList<FichierLu> Fichiers);
+    int Liaisons, int Sources, string Dossier, string Erreur, bool EstUneLecture, bool Suivi, IReadOnlyList<FichierLu> Fichiers,
+    string Suite = "", int Morceaux = 0, double TailleMorceau = 0, string Carte = "", double Envoye = 0);
 
-/// <summary>Un pair relié à un torrent : son adresse, son logiciel, ce qu'il nous envoie et ce qu'on lui envoie.</summary>
-internal sealed record PairLu(string Adresse, string Logiciel, double Recoit, double Envoie, bool Source);
+/// <summary>Un pair relié à un torrent : son adresse, son logiciel, ce qu'il nous envoie, ce qu'on lui envoie, et les morceaux qu'il a.</summary>
+internal sealed record PairLu(string Adresse, string Logiciel, double Recoit, double Envoie, bool Source, string Carte = "", string Ip = "");
+
+/// <summary>Lecture des cartes de morceaux qu'aria2 rend en hexadécimal, un bit par morceau, le premier morceau en tête.</summary>
+internal static class CarteDeMorceaux
+{
+    /// <summary>Combien de morceaux la carte marque comme présents, sur les « morceaux » premiers.</summary>
+    public static int Compter(string carte, int morceaux)
+    {
+        var compte = 0;
+        for (var i = 0; i < morceaux && i / 4 < carte.Length; i++)
+            if (Present(carte, i)) compte++;
+        return compte;
+    }
+
+    /// <summary>Vrai quand le morceau numéro « i » est marqué présent dans la carte.</summary>
+    public static bool Present(string carte, int i)
+    {
+        if (i / 4 >= carte.Length) return false;
+        var chiffre = Convert.ToInt32(carte[i / 4].ToString(), 16);
+        return (chiffre & (8 >> (i % 4))) != 0;
+    }
+
+    /// <summary>
+    /// La carte ramenée à « cases » cases, chacune la part (de 0 à 1) des morceaux qu'elle regroupe déjà reçus.
+    /// Un gros torrent compte des milliers de morceaux : on les montre par paquets, comme les logiciels de torrent.
+    /// </summary>
+    public static double[] Regrouper(string carte, int morceaux, int cases)
+    {
+        var parts = new double[cases];
+        if (morceaux <= 0) return parts;
+        for (var c = 0; c < cases; c++)
+        {
+            var debut = (int)((long)c * morceaux / cases);
+            var fin = Math.Max(debut + 1, (int)((long)(c + 1) * morceaux / cases));
+            var presents = 0;
+            for (var i = debut; i < fin && i < morceaux; i++)
+                if (Present(carte, i)) presents++;
+            parts[c] = (double)presents / (fin - debut);
+        }
+        return parts;
+    }
+}
 
 /// <summary>
 /// Fait tourner aria2 en service et lui parle. Un torrent dure, et l'on veut voir ses sources, ses pairs et
@@ -253,18 +300,20 @@ internal sealed class ServiceTorrents
         return document.RootElement.GetProperty("result").Clone();
     }
 
-    /// <summary>Confie un torrent à aria2, à ranger dans le dossier donné.</summary>
-    public async Task AjouterAsync(string? magnet, byte[]? fichier, string dossier)
+    /// <summary>Confie un torrent à aria2, à ranger dans le dossier donné. Rend le numéro qu'aria2 lui donne.</summary>
+    public async Task<string> AjouterAsync(string? magnet, byte[]? fichier, string dossier)
     {
         var options = new Dictionary<string, string> { ["dir"] = dossier };
-        if (magnet is not null) await AppelerAsync("aria2.addUri", new[] { magnet }, options);
-        else await AppelerAsync("aria2.addTorrent", Convert.ToBase64String(fichier!), Array.Empty<string>(), options);
+        var numero = magnet is not null
+            ? await AppelerAsync("aria2.addUri", new[] { magnet }, options)
+            : await AppelerAsync("aria2.addTorrent", Convert.ToBase64String(fichier!), Array.Empty<string>(), options);
+        return numero.ValueKind == JsonValueKind.String ? numero.GetString() ?? "" : "";
     }
 
     private static readonly string[] Champs =
     [
         "gid", "status", "totalLength", "completedLength", "downloadSpeed", "uploadSpeed", "connections", "numSeeders",
-        "dir", "files", "bittorrent", "errorMessage", "followedBy",
+        "dir", "files", "bittorrent", "errorMessage", "followedBy", "numPieces", "pieceLength", "bitfield", "uploadLength",
     ];
 
     /// <summary>Tous les torrents connus d'aria2 : ceux qui avancent, ceux qui attendent, ceux qui sont finis ou arrêtés.</summary>
@@ -305,7 +354,9 @@ internal sealed class ServiceTorrents
         var suivi = t.TryGetProperty("followedBy", out var suite) && suite.ValueKind == JsonValueKind.Array && suite.GetArrayLength() > 0;
         return new TorrentLu(Texte(t, "gid"), Texte(t, "status"), nom, Nombre(t, "totalLength"), Nombre(t, "completedLength"),
             Nombre(t, "downloadSpeed"), Nombre(t, "uploadSpeed"), (int)Nombre(t, "connections"), (int)Nombre(t, "numSeeders"),
-            Texte(t, "dir"), Texte(t, "errorMessage"), lecture, suivi, fichiers);
+            Texte(t, "dir"), Texte(t, "errorMessage"), lecture, suivi, fichiers,
+            suivi ? suite[0].GetString() ?? "" : "",
+            (int)Nombre(t, "numPieces"), Nombre(t, "pieceLength"), Texte(t, "bitfield"), Nombre(t, "uploadLength"));
     }
 
     /// <summary>Les pairs reliés à un torrent en ce moment. Vide pour un torrent qui n'est pas en cours.</summary>
@@ -315,7 +366,7 @@ internal sealed class ServiceTorrents
         foreach (var p in (await AppelerAsync("aria2.getPeers", gid)).EnumerateArray())
         {
             pairs.Add(new PairLu($"{Texte(p, "ip")}:{Texte(p, "port")}", Logiciel(Texte(p, "peerId")),
-                Nombre(p, "downloadSpeed"), Nombre(p, "uploadSpeed"), Texte(p, "seeder") == "true"));
+                Nombre(p, "downloadSpeed"), Nombre(p, "uploadSpeed"), Texte(p, "seeder") == "true", Texte(p, "bitfield"), Texte(p, "ip")));
         }
         return pairs;
     }

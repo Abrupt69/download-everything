@@ -17,7 +17,7 @@ Au premier lancement, Windows affiche un écran d'avertissement, parce que le fi
 Pour Debian et Ubuntu, prendre le fichier `.deb` de la [dernière version](../../releases/latest), puis :
 
 ```
-sudo apt install ./download-everything_1.4.0_amd64.deb
+sudo apt install ./download-everything_1.5.0_amd64.deb
 ```
 
 L'application apparaît ensuite dans le menu.
@@ -25,7 +25,7 @@ L'application apparaît ensuite dans le menu.
 ## S'en servir
 
 1. Copier l'adresse de ce qu'on veut. Sous Windows, en revenant sur la fenêtre, elle est déjà dans le champ. On peut aussi la glisser dessus.
-2. Choisir sa vue avec les trois touches du haut, Audio, Vidéo ou Torrents. L'application s'ouvre sur Audio.
+2. Choisir sa vue avec les touches du haut, Audio, Vidéo ou Torrents. L'application s'ouvre sur Audio. La quatrième touche, Historique, retrouve ce qui a déjà été téléchargé.
 3. Cliquer Télécharger, juste à côté de l'adresse.
 
 Le reste se règle tout seul. Le son sort en MP3 et la vidéo en MP4, deux formats qui se lisent partout. Chaque vue ne montre que ses réglages, et retient les siens quand on passe de l'une à l'autre.
@@ -35,7 +35,7 @@ Le reste se règle tout seul. Le son sort en MP3 et la vidéo en MP4, deux forma
 - Les vidéos et le son de près de 1 800 sites, YouTube en tête.
 - Les liens Spotify, Deezer et Apple Music, que ce soit un morceau, un album ou une playlist. L'application lit la liste des titres, puis va chercher chaque morceau sur YouTube. Rien n'est pris sur ces services eux-mêmes.
 - Les images et les galeries d'images.
-- Les torrents, par lien magnet ou fichier `.torrent`. Ils ont leur propre vue, avec les sources, les pairs et le débit.
+- Les torrents, par lien magnet ou fichier `.torrent`. Ils ont leur propre vue, avec les sources, le débit, la carte des morceaux reçus, l'avancement de chaque fichier, et pour chaque pair son pays, son logiciel et ce qu'il possède déjà.
 - Les fichiers ordinaires, un PDF ou une archive par exemple.
 
 Plusieurs liens collés d'un coup partent ensemble.
@@ -52,7 +52,9 @@ Pour qui mixe, l'interrupteur « Niveau égalisé pour les sets » ramène chaqu
 
 Il arrive que YouTube donne un autre morceau de la même durée que celui demandé. Quand le titre trouvé ne ressemble pas au titre attendu, le morceau est marqué « à vérifier » et noté dans un fichier texte à côté. À l'oreille de trancher.
 
-L'application se tient à jour. Elle signale ses nouvelles versions, et un bouton met à jour les outils qu'elle embarque.
+L'historique garde la date, le titre et le site de chaque téléchargement. On y cherche un mot, on ouvre le dossier d'un fichier ou on le relance d'un clic. Il reste sur le poste, et un bouton l'efface.
+
+L'application se tient à jour. Elle signale ses nouvelles versions. Une fois par jour, elle regarde si yt-dlp a changé et le remplace toute seule, empreinte contrôlée, parce que c'est lui qui cesse de marcher quand un site change. Les autres outils en retard sont signalés, et un bouton les met à jour.
 
 ## Quand ça coince
 
@@ -98,7 +100,9 @@ La version Linux a été essayée sur Debian 13 et Ubuntu 24.04 dans des machine
 
 L'application s'appuie sur [yt-dlp](https://github.com/yt-dlp/yt-dlp), [FFmpeg](https://ffmpeg.org), [Deno](https://github.com/denoland/deno), [spotDL](https://github.com/spotDL/spotify-downloader), [gallery-dl](https://codeberg.org/mikf/gallery-dl) et [aria2](https://github.com/aria2/aria2). Chacun vient de son dépôt officiel, et son empreinte est contrôlée avant usage. Chacun garde sa licence, détaillée dans [NOTICES.md](NOTICES.md).
 
-L'application n'envoie rien nulle part. À l'ouverture, elle regarde la page des versions de ce dépôt pour savoir s'il en existe une nouvelle, et c'est tout.
+Le pays des pairs d'un torrent vient d'une table embarquée, tirée de la base gratuite de DB-IP ([IP Geolocation by DB-IP](https://db-ip.com), licence CC BY 4.0). Elle se lit sur le poste, aucune adresse n'est envoyée nulle part.
+
+L'application n'envoie rien nulle part. À l'ouverture, elle regarde la page des versions de ce dépôt pour savoir s'il en existe une nouvelle et, une fois par jour, celles de ses outils. C'est tout.
 
 L'empreinte SHA-256 de chaque fichier publié est donnée dans les notes de sa version, pour qui veut la vérifier.
 
@@ -114,7 +118,10 @@ Il faut le SDK .NET 10 et PowerShell 7.
 # 1. Rassembler les outils à embarquer, pris sur leurs dépôts officiels
 pwsh -File preparer-charge.ps1
 
-# 2. Publier l'exécutable unique
+# 2. Préparer la table des pays (base DB-IP du mois). Sans elle, l'application se construit, sans les pays des pairs.
+pwsh -File preparer-pays.ps1
+
+# 3. Publier l'exécutable unique
 dotnet publish YtDlpInterface.csproj -c Release -o publication
 ```
 
@@ -141,6 +148,8 @@ L'application est écrite en C#, avec WPF pour Windows et Avalonia pour Linux. L
 | `GalleryDl.cs` | images et galeries |
 | `FichierDirect.cs` | fichier ordinaire pris tel quel |
 | `Aria2.cs`, `VueTorrents.xaml` et `.xaml.cs` | torrents et leur vue |
+| `PaysDesAdresses.cs`, `preparer-pays.ps1` | pays des pairs, d'après la table DB-IP embarquée |
+| `Historique.cs` | historique des téléchargements |
 | `NiveauSonore.cs` | niveau égalisé pour les sets, sans réencodage |
 | `VersionDeLApplication.cs` | avis de nouvelle version et remplacement de l'exécutable |
 | `MiseAJourDesOutils.cs` | mise à jour des outils embarqués |

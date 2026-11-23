@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>YtDlpInterface</RootNamespace>
     <AssemblyName>DownloadEverything</AssemblyName>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Product>Download Everything</Product>
     <AssemblyTitle>Download Everything</AssemblyTitle>
     <Description>Interface graphique pour yt-dlp, avec ffmpeg et Deno embarqués</Description>
@@ -41,6 +41,11 @@
     <None Remove="linux\**" />
     <EmbeddedResource Remove="linux\**" />
     <EmbeddedResource Remove="Charge\**" />
+    <!-- La table des pays des adresses IP, préparée par preparer-pays.ps1 (base DB-IP, hors dépôt). Sans elle,
+         l'application se construit quand même, la colonne des pays reste simplement vide. -->
+    <!-- WithCulture="false" : sans lui, MSBuild prend « .bin » pour un code de langue (le bini) et range la table dans une
+         traduction, que SatelliteResourceLanguages écarte ensuite. Vu le 23/11/2026, la colonne des pays restait vide. -->
+    <EmbeddedResource Include="pays\pays-ip.bin.gz" LogicalName="pays-ip.bin.gz" WithCulture="false" Condition="Exists('pays\pays-ip.bin.gz')" />
     <None Remove="Charge\**" />
     <Page Remove="Charge\**" />
   </ItemGroup>

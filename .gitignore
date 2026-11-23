@@ -14,3 +14,6 @@ publication-essai/
 
 # Paquet Linux, recréé par linux/construire-deb.ps1
 linux/publication/
+
+# Table des pays des adresses IP, préparée par preparer-pays.ps1 à partir de la base DB-IP du mois.
+pays/

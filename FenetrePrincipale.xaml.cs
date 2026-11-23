@@ -210,6 +210,8 @@ public partial class FenetrePrincipale : Window
             RegarderLePressePapiers(this, EventArgs.Empty);
             // Sans attendre la réponse : la fenêtre est déjà utilisable, l'avis arrivera s'il y a lieu.
             _ = ChercherUneNouvelleVersionAsync();
+            // Une fois par jour, les outils : yt-dlp se met à jour tout seul, les autres sont signalés.
+            _ = VerifierLesOutilsChaqueJourAsync();
         };
         Closing += FermerLaFenetre;
     }
@@ -247,6 +249,9 @@ public partial class FenetrePrincipale : Window
         var texte = 0x00A3A3A3;     // #A3A3A3
         _ = DwmSetWindowAttribute(poignee, DWMWA_CAPTION_COLOR, ref fond, sizeof(int));
         _ = DwmSetWindowAttribute(poignee, DWMWA_TEXT_COLOR, ref texte, sizeof(int));
+        // Les boutons de la barre de titre en clair, comme le faisait le thème Fluent avant d'être retiré (voir App.xaml).
+        var sombre = 1;
+        _ = DwmSetWindowAttribute(poignee, DWMWA_USE_IMMERSIVE_DARK_MODE, ref sombre, sizeof(int));
 
         // La fenêtre se redimensionne en largeur seulement, sa hauteur suit toujours son contenu.
         // Le bouton Agrandir n'aurait pas de sens ici, il est retiré.
@@ -255,6 +260,7 @@ public partial class FenetrePrincipale : Window
         HwndSource.FromHwnd(poignee)?.AddHook(EcouterWindows);
     }
 
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const int DWMWA_CAPTION_COLOR = 35;
     private const int DWMWA_TEXT_COLOR = 36;
     private const int GWL_STYLE = -16;
@@ -815,6 +821,7 @@ public partial class FenetrePrincipale : Window
         }
 
         Bandeau.Visibility = Visibility.Collapsed;
+        _versionYtDlp = version;
         _complements = YtDlp.TrouverComplements();
         AdapterLesListes();
 
@@ -893,6 +900,8 @@ public partial class FenetrePrincipale : Window
             return;
         }
         var adresse = adresses[0];
+        // Pour l'historique : chaque fichier reçu y est noté avec l'adresse qui l'a amené.
+        _sourceDuTravail = adresse;
 
         var dossier = _dossier;
         try
@@ -909,10 +918,18 @@ public partial class FenetrePrincipale : Window
         await Travailler(annulable: true, async () =>
         {
             ViderLaZoneDEtat();
+            // Remis à zéro avant la vérification de yt-dlp, et non après : Annuler est déjà affiché pendant qu'elle se
+            // fait, et un clic à ce moment-là doit compter. Elle peut durer plusieurs secondes juste après une mise à
+            // jour, le temps que l'antivirus examine le nouveau yt-dlp (vu aux essais le 23/11/2026).
+            _annulationDemandee = false;
             var executable = await VerifierYtDlpAsync();
             if (executable is null) return;
+            if (_annulationDemandee)
+            {
+                Terminer("ANNULÉ", "", Ton.Neutre);
+                return;
+            }
 
-            _annulationDemandee = false;
             // Une nouvelle demande remplace la précédente, ses manquants ne sont plus proposés.
             _aReprendre = [];
             _aVerifier.Clear();
@@ -1008,7 +1025,7 @@ public partial class FenetrePrincipale : Window
                         _elements.Add(element);
                         // Chaque vidéo est demandée seule, dans le dossier de la playlist et précédée de son rang.
                         var uneVideo = new Demande(video, audioSeul, format, qualite, dossier, YtDlp.PrefixeDeListe(nomDeListe, i + 1), _qualiteDuSon, _egaliseur);
-                        travaux.Add(new Travail(element, "erreur", suivi => YtDlp.ArgumentsTelechargement(uneVideo, _complements, suivi)));
+                        travaux.Add(new Travail(element, "erreur", suivi => YtDlp.ArgumentsTelechargement(uneVideo, _complements, suivi)) { Source = video });
                     }
                     var (recus, echecs) = await MenerLaListeAsync(executable, travaux);
                     ConclureLaListe(recus, echecs);
@@ -1049,6 +1066,9 @@ public partial class FenetrePrincipale : Window
             }
             else if (fichiers.Count > 0)
             {
+                // L'historique, sauf pour un fichier unique qui était déjà dans le dossier : il n'a pas été téléchargé cette fois.
+                if (!(_dejaPresent && fichiers.Count == 1))
+                    foreach (var recu in fichiers) Historique.Noter(audioSeul ? "son" : "vidéo", adresse, recu);
                 // Niveau égalisé, pour ce qui vient d'arriver. Un fichier déjà présent a été traité à son arrivée.
                 if (_niveau && !_dejaPresent)
                 {
@@ -1201,6 +1221,12 @@ public partial class FenetrePrincipale : Window
             BarreProgression.Visibility = Visibility.Collapsed;
             Mesures.Visibility = Visibility.Collapsed;
             await VerifierYtDlpAsync();
+            // Tout vient d'être regardé : le signal sur le bouton ne garde que ce qui a échoué.
+            if (!annule)
+            {
+                MiseAJourDesOutils.NoterLaVerification(echecs);
+                MontrerLesOutilsEnRetard(echecs);
+            }
             // L'application elle-même ne se remplace pas ici, mais c'est le bon moment pour regarder si elle a une suite.
             await ChercherUneNouvelleVersionAsync();
             var suite = _nouvelleVersion is { } publiee
@@ -1279,6 +1305,7 @@ public partial class FenetrePrincipale : Window
             return;
         }
         _annulationDemandee = true;   // plus aucun travail de liste ne démarre pendant la fermeture
+        _fermeture = true;            // ni une mise à jour automatique qui attendait son tour
         _arretDuTransfert?.Cancel();
         // Les torrents s'arrêtent avec l'application. Ce qui est reçu reste sur le disque, les rajouter les reprendra.
         _vueTorrents?.Arreter();
@@ -1395,6 +1422,9 @@ public partial class FenetrePrincipale : Window
 
         /// <summary>Le titre de la vidéo que yt-dlp est en train de prendre pour ce travail.</summary>
         public string TitreTrouve = "";
+
+        /// <summary>L'adresse de ce travail, pour l'historique. Vide, c'est celle qui était dans le champ au clic.</summary>
+        public string Source { get; init; } = "";
 
         /// <summary>Vrai quand YouTube a refusé la connexion pendant la tentative en cours. Le travail retourne alors dans la file.</summary>
         public bool Refuse;
@@ -1672,12 +1702,18 @@ public partial class FenetrePrincipale : Window
 
                 // Dernier recours pour une adresse où yt-dlp n'a rien trouvé : des images, par gallery-dl.
                 // Pas après un refus de YouTube, où il n'y a rien à chercher ailleurs.
+                var recusEnImages = false;
                 if (fichier is null && !_annulationDemandee && !travail.Refuse && travail.RecoursImages is { } recours && GalleryDl.Trouver() is { } galerie)
                 {
                     var images = await LancerLeRecoursImagesAsync(galerie, recours(), travail);
                     if (images.Count > 0)
                     {
+                        recusEnImages = true;
                         fichiers.AddRange(images.Take(images.Count - 1));
+                        // Toutes les images d'une galerie entrent dans l'historique, la dernière avec les autres plus bas.
+                        if (!travail.DejaLa)
+                            foreach (var image in images.Take(images.Count - 1))
+                                Historique.Noter("image", travail.Source.Length > 0 ? travail.Source : _sourceDuTravail, image);
                         fichier = images[^1];
                     }
                 }
@@ -1718,6 +1754,14 @@ public partial class FenetrePrincipale : Window
                     travail.Reussi = true;
                     reussites++;
                     refusDeSuite = 0;
+                    // L'historique, pour ce qui vient vraiment d'arriver. Un morceau de musique est du son, quelle que soit la vue.
+                    if (!travail.DejaLa)
+                    {
+                        var genre = travail.Direct is not null ? "fichier"
+                            : recusEnImages ? "image"
+                            : travail.TitreAttendu is not null || _audio ? "son" : "vidéo";
+                        Historique.Noter(genre, travail.Source.Length > 0 ? travail.Source : _sourceDuTravail, fichier);
+                    }
                     // Garde-fou : le morceau est arrivé, mais la vidéo retenue porte-t-elle bien son titre ?
                     var doute = travail.DejaLa || travail.TitreAttendu is null ? null : YtDlp.DouteSurLeTitre(travail.TitreAttendu, travail.TitreTrouve);
                     if (doute is not null)
@@ -2114,10 +2158,16 @@ public partial class FenetrePrincipale : Window
         {
             ViderLaZoneDEtat();
             BoutonReprendre.Visibility = Visibility.Collapsed;
+            // Remis à zéro avant la vérification de yt-dlp, pour qu'un clic sur Annuler pendant celle-ci compte (voir Telecharger).
+            _annulationDemandee = false;
             var executable = await VerifierYtDlpAsync();
             if (executable is null) return;
+            if (_annulationDemandee)
+            {
+                Terminer("ANNULÉ", "", Ton.Neutre);
+                return;
+            }
 
-            _annulationDemandee = false;
             Ecrire("");
             Ecrire(travaux.Count > 1 ? $"Reprise des {travaux.Count} téléchargements manquants." : "Reprise du téléchargement manquant.");
             foreach (var travail in travaux)
@@ -2158,6 +2208,8 @@ public partial class FenetrePrincipale : Window
             if (recus.Contains(fichier)) return;
             recus.Add(fichier);
             if (deja) dejaLa++;
+            // Seules les images vraiment reçues cette fois entrent dans l'historique.
+            else Historique.Noter("image", adresse, fichier);
             Etat(recus.Count > 1 ? $"{recus.Count} images reçues…" : "1 image reçue…");
         }
 
@@ -2241,6 +2293,7 @@ public partial class FenetrePrincipale : Window
             var fichier = await FichierDirect.TelechargerAsync(client, adresse, dossier, avancement, arret.Token);
             fini = true;
             if (fichier is null) return false;
+            Historique.Noter("fichier", adresse, fichier);
 
             BarreProgression.IsIndeterminate = false;
             BarreProgression.Visibility = Visibility.Visible;
@@ -2281,24 +2334,34 @@ public partial class FenetrePrincipale : Window
     // Créée à la première visite : tant qu'on n'ouvre pas la vue, aria2 n'est pas lancé et rien n'est chargé.
     private VueTorrents? _vueTorrents;
 
+    // La vue montrée en ce moment, pour savoir d'où l'on vient quand on change.
+    private enum Vue { Telechargement, Torrents, Historique }
+    private Vue _vue = Vue.Telechargement;
+
     /// <summary>
-    /// Les trois touches de la plaque, « Audio », « Vidéo » et « Torrents », changent la vue dans la même fenêtre.
-    /// Audio et vidéo partagent les mêmes rangées, chacune avec ses réglages. Les torrents ont leur propre vue,
-    /// et continuent d'avancer quand elle est cachée.
+    /// Les quatre touches de la plaque, « Audio », « Vidéo », « Torrents » et « Historique », changent la vue dans la
+    /// même fenêtre. Audio et vidéo partagent les mêmes rangées, chacune avec ses réglages. Les torrents ont leur
+    /// propre vue, et continuent d'avancer quand elle est cachée. L'historique se relit à chaque visite.
     /// </summary>
     private void ChangerDeVue(object sender, RoutedEventArgs e)
     {
         // Les touches préviennent dès la lecture du dessin, avant que le reste existe.
-        if (VueTelechargement is null || ZoneTorrents is null || ChoixVueTorrents is null || BasculeCle is null
-            || ChoixAudio is null || ChoixVideo is null) return;
+        if (VueTelechargement is null || ZoneTorrents is null || ZoneHistorique is null || ChoixVueTorrents is null
+            || ChoixVueHistorique is null || BasculeCle is null || ChoixAudio is null || ChoixVideo is null) return;
         var torrents = ChoixVueTorrents.IsChecked == true;
+        var historique = ChoixVueHistorique.IsChecked == true;
         // Entre deux touches il y a un instant où aucune n'est enfoncée (Avalonia prévient aussi de celle qu'on quitte).
-        if (!torrents && ChoixAudio.IsChecked != true && ChoixVideo.IsChecked != true) return;
-        if (!torrents)
+        if (!torrents && !historique && ChoixAudio.IsChecked != true && ChoixVideo.IsChecked != true) return;
+
+        var vue = torrents ? Vue.Torrents : historique ? Vue.Historique : Vue.Telechargement;
+        var avant = _vue;
+        _vue = vue;
+        if (vue == Vue.Telechargement)
         {
             _audio = ChoixAudio.IsChecked == true;
             AdapterLesListes();
         }
+        if (vue == Vue.Historique) RemplirLHistorique();
         if (torrents && _vueTorrents is null)
         {
 #if PORTABLE
@@ -2308,20 +2371,23 @@ public partial class FenetrePrincipale : Window
 #endif
             // Le nombre de torrents en cours s'écrit sur la touche, pour qu'on le voie depuis l'autre vue.
             _vueTorrents.EnCoursChange += nombre => ChoixVueTorrents.Content = nombre > 0 ? $"Torrents ({nombre})" : "Torrents";
+            // Un torrent fini entre dans l'historique, comme un téléchargement ordinaire.
+            _vueTorrents.TorrentTermine += (source, chemin) => Historique.Noter("torrent", source, chemin);
             ZoneTorrents.Child = _vueTorrents;
         }
-        var torrentsAvant = ZoneTorrents.Visibility == Visibility.Visible;
-        VueTelechargement.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
+        var telechargement = vue == Vue.Telechargement;
+        VueTelechargement.Visibility = telechargement ? Visibility.Visible : Visibility.Collapsed;
         ZoneTorrents.Visibility = torrents ? Visibility.Visible : Visibility.Collapsed;
+        ZoneHistorique.Visibility = historique ? Visibility.Visible : Visibility.Collapsed;
         // Le compte Spotify et le journal appartiennent à la vue de téléchargement : leur rangée du pied part avec elle.
-        BasculeCle.Visibility = BasculeJournal.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
-        PiedDesBascules.Visibility = torrents ? Visibility.Collapsed : Visibility.Visible;
-        if (torrents != torrentsAvant)
+        BasculeCle.Visibility = BasculeJournal.Visibility = telechargement ? Visibility.Visible : Visibility.Collapsed;
+        PiedDesBascules.Visibility = telechargement ? Visibility.Visible : Visibility.Collapsed;
+        if (vue != avant)
         {
-            // On entre dans les torrents ou on en sort : toute la vue qui arrive monte de quelques points en apparaissant.
-            FaireEntrer(torrents ? ZoneTorrents : VueTelechargement);
+            // On change de vue : toute la vue qui arrive monte de quelques points en apparaissant.
+            FaireEntrer(vue switch { Vue.Torrents => ZoneTorrents, Vue.Historique => ZoneHistorique, _ => VueTelechargement });
         }
-        else if (!torrents)
+        else if (telechargement)
         {
             // D'audio à vidéo, les rangées communes ne bougent pas. Seules les deux listes qui changent se renouvellent,
             // pendant que la rangée de l'égaliseur se déroule ou se replie.
@@ -2336,6 +2402,220 @@ public partial class FenetrePrincipale : Window
     {
         ChoixVueTorrents.IsChecked = true;
         return _vueTorrents!;
+    }
+
+    // ───────────────────────────── Historique ─────────────────────────────
+
+    // L'adresse du téléchargement en cours, telle qu'elle était dans le champ au clic.
+    private string _sourceDuTravail = "";
+
+    // Toutes les lignes lues à la dernière visite. La recherche filtre dans cette liste, sans relire le fichier.
+    private List<LigneDHistorique> _historique = [];
+
+    // Au-delà, seules les plus récentes sont montrées : une liste de milliers de lignes ralentirait la fenêtre.
+    // La recherche, elle, parcourt tout.
+    private const int LignesMontrees = 300;
+
+    // L'effacement se confirme d'un second clic dans les quatre secondes, sans boîte de dialogue.
+    private DateTime _effacementDemande = DateTime.MinValue;
+
+    /// <summary>Relit l'historique et le montre, filtré par la recherche en cours.</summary>
+    private void RemplirLHistorique()
+    {
+        _historique = Historique.Lire().Select(entree => new LigneDHistorique(entree)).ToList();
+        FiltrerLHistorique(this, new RoutedEventArgs());
+    }
+
+    private void FiltrerLHistorique(object sender, RoutedEventArgs e)
+    {
+        if (ListeHistorique is null || ChampRechercheHistorique is null) return;
+        var recherche = (ChampRechercheHistorique.Text ?? "").Trim();
+        var trouvees = _historique.Where(ligne => ligne.Correspond(recherche)).ToList();
+        ListeHistorique.ItemsSource = trouvees.Take(LignesMontrees).ToList();
+
+        CompteHistorique.Text = (_historique.Count, trouvees.Count, recherche.Length) switch
+        {
+            (0, _, _) => "",
+            (var tout, var vues, 0) when vues > LignesMontrees => $"{tout} TÉLÉCHARGEMENTS, LES {LignesMontrees} PLUS RÉCENTS SONT AFFICHÉS",
+            (var tout, _, 0) => tout > 1 ? $"{tout} TÉLÉCHARGEMENTS" : "1 TÉLÉCHARGEMENT",
+            (_, var vues, _) => vues > 1 ? $"{vues} TROUVÉS" : vues == 1 ? "1 TROUVÉ" : "",
+        };
+        TexteHistoriqueVide.Text = _historique.Count == 0
+            ? "Rien pour l'instant. Chaque fichier téléchargé viendra s'inscrire ici, avec son dossier et son adresse d'origine."
+            : $"Rien ne correspond à « {recherche} ».";
+        TexteHistoriqueVide.Visibility = trouvees.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        BoutonEffacerHistorique.IsEnabled = _historique.Count > 0;
+        GarderLaFenetreALEcran();
+    }
+
+    private void EffacerLHistorique(object sender, RoutedEventArgs e)
+    {
+        if (DateTime.Now - _effacementDemande > TimeSpan.FromSeconds(4))
+        {
+            // Premier clic : on demande confirmation sur le bouton lui-même, qui reprend son nom de lui-même ensuite.
+            _effacementDemande = DateTime.Now;
+            BoutonEffacerHistorique.Content = "Cliquer encore pour effacer";
+            BoutonEffacerHistorique.SetResourceReference(ForegroundProperty, "Alerte");
+            _ = Task.Delay(4000).ContinueWith(_ => Dispatcher.BeginInvoke(RemettreLeBoutonDEffacement));
+            return;
+        }
+        _effacementDemande = DateTime.MinValue;
+        RemettreLeBoutonDEffacement();
+        try
+        {
+            Historique.Effacer();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            CompteHistorique.Text = "L'HISTORIQUE N'A PAS PU ÊTRE EFFACÉ";
+            return;
+        }
+        RemplirLHistorique();
+    }
+
+    private void RemettreLeBoutonDEffacement()
+    {
+        if (DateTime.Now - _effacementDemande < TimeSpan.FromSeconds(4)) return;
+        BoutonEffacerHistorique.Content = "Effacer l'historique";
+        BoutonEffacerHistorique.SetResourceReference(ForegroundProperty, "TexteDoux");
+    }
+
+    private static LigneDHistorique? LigneDe(object sender) =>
+#if PORTABLE
+        (sender as Control)?.DataContext as LigneDHistorique;
+#else
+        (sender as FrameworkElement)?.DataContext as LigneDHistorique;
+#endif
+
+    /// <summary>Ouvre le dossier où le fichier a été rangé, en le montrant quand il y est encore.</summary>
+    private void MontrerDepuisLHistorique(object sender, RoutedEventArgs e)
+    {
+        if (LigneDe(sender) is not { } ligne) return;
+        var chemin = ligne.Entree.Chemin;
+        var dossier = Directory.Exists(chemin) ? chemin : Path.GetDirectoryName(chemin);
+        if (dossier is null || !Directory.Exists(dossier))
+        {
+            CompteHistorique.Text = "CE DOSSIER N'EXISTE PLUS";
+            return;
+        }
+#if PORTABLE
+        LancerLExplorateur(dossier);
+#else
+        if (File.Exists(chemin)) LancerLExplorateur(null, $"/select,\"{chemin}\"");
+        else LancerLExplorateur(dossier);
+#endif
+    }
+
+    /// <summary>
+    /// Remet l'adresse d'origine dans le champ, dans la vue qui lui va. Rien ne part sans un clic sur Télécharger :
+    /// on peut d'abord changer le format, ou le dossier.
+    /// </summary>
+    private void RelancerDepuisLHistorique(object sender, RoutedEventArgs e)
+    {
+        if (LigneDe(sender) is not { } ligne || ligne.Entree.Source.Length == 0) return;
+        var entree = ligne.Entree;
+        if (entree.Genre == "torrent")
+        {
+            ChoixVueTorrents.IsChecked = true;
+            _vueTorrents?.ProposerUneAdresse(entree.Source);
+            return;
+        }
+        (entree.Genre == "son" ? ChoixAudio : ChoixVideo).IsChecked = true;
+        ChampAdresse.Text = entree.Source;
+        ChampAdresse.Focus();
+        ChampAdresse.SelectAll();
+    }
+
+    // ───────────────────────────── Vérification quotidienne des outils ─────────────────────────────
+
+    // La version de yt-dlp installée, lue au démarrage et après chaque mise à jour.
+    private string? _versionYtDlp;
+
+    // Vrai pendant la fermeture : une mise à jour automatique qui attendait son tour ne démarre plus.
+    private bool _fermeture;
+
+    /// <summary>
+    /// Une fois par jour, à l'ouverture, demande à chaque dépôt officiel sa dernière version. yt-dlp, qui casse le plus
+    /// souvent quand YouTube change, est remplacé tout seul, empreinte contrôlée, dès qu'aucun téléchargement ne tourne.
+    /// Les autres outils cassent rarement : une nouvelle version est seulement signalée sur « Tout mettre à jour ».
+    /// Sans réseau, rien ne se passe, la vérification sera refaite à la prochaine ouverture.
+    /// </summary>
+    private async Task VerifierLesOutilsChaqueJourAsync()
+    {
+        // Pour les essais (DOWNLOAD_EVERYTHING_ESSAI_VIEUX_YTDLP=1) : la version installée passe pour ancienne et la
+        // vérification se fait même si elle a déjà eu lieu ce jour-là. C'est le seul moyen d'éprouver le remplacement
+        // tant que la version installée est la dernière.
+        var essai = Environment.GetEnvironmentVariable("DOWNLOAD_EVERYTHING_ESSAI_VIEUX_YTDLP") == "1";
+        if (!essai && MiseAJourDesOutils.VerifieRecemment())
+        {
+            MontrerLesOutilsEnRetard(MiseAJourDesOutils.EnRetardNotes());
+            return;
+        }
+
+        MiseAJourDesOutils.Bilan bilan;
+        try
+        {
+            using var client = MiseAJourDesOutils.NouveauClient();
+            using var delai = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            bilan = await MiseAJourDesOutils.ComparerAsync(client, delai.Token);
+        }
+        catch (Exception e) when (e is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException
+                                      or KeyNotFoundException or InvalidOperationException or InvalidDataException)
+        {
+            return;
+        }
+
+        MiseAJourDesOutils.NoterLaVerification(bilan.AutresEnRetard);
+        MontrerLesOutilsEnRetard(bilan.AutresEnRetard);
+
+        var installee = essai ? "2000.01.01" : _versionYtDlp;
+        if (installee is null || bilan.YtDlpPublie.Length == 0 || bilan.YtDlpPublie == installee) return;
+
+        // Un téléchargement est peut-être déjà parti : yt-dlp ne peut pas être remplacé pendant qu'il tourne.
+        // On attend qu'il ait fini, aussi longtemps qu'il le faut, tant que la fenêtre est ouverte.
+        while (_occupe && !_fermeture) await Task.Delay(TimeSpan.FromSeconds(3));
+        if (_fermeture) return;
+
+        await Travailler(annulable: false, async () =>
+        {
+            var avant = _versionYtDlp ?? "?";
+            Etat($"Nouvelle version de yt-dlp publiée ({bilan.YtDlpPublie}), mise à jour automatique…", annoncer: true);
+            try
+            {
+                using var client = MiseAJourDesOutils.NouveauClient();
+                using var delai = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                var numero = await MiseAJourDesOutils.YtDlpAsync(client, new Progress<MiseAJourDesOutils.Avancement>(_ => { }), delai.Token);
+                Ecrire($"yt-dlp mis à jour automatiquement, de la version {avant} à la version {numero}, empreinte contrôlée.");
+            }
+            catch (Exception e) when (e is HttpRequestException or OperationCanceledException or IOException or InvalidDataException
+                                          or UnauthorizedAccessException or System.Text.Json.JsonException or KeyNotFoundException)
+            {
+                // L'ancien yt-dlp est resté en place, rien n'a été remplacé à moitié. On réessaiera à la prochaine ouverture.
+                Ecrire($"La mise à jour automatique de yt-dlp n'a pas abouti, la version {avant} reste en place. {e.Message}");
+                MiseAJourDesOutils.NoterLaVerification(bilan.AutresEnRetard.Prepend("yt-dlp"));
+            }
+            finally
+            {
+                await Task.Run(MiseAJourDesOutils.Nettoyer);
+            }
+            await VerifierYtDlpAsync();
+            Etat("");
+        });
+    }
+
+    /// <summary>Écrit sur « Tout mettre à jour » combien d'outils ont une version plus récente, et lesquels au survol.</summary>
+    private void MontrerLesOutilsEnRetard(List<string> enRetard)
+    {
+        if (enRetard.Count == 0)
+        {
+            BoutonMettreAJour.Content = "Tout _mettre à jour";
+            BoutonMettreAJour.SetResourceReference(ForegroundProperty, "TexteDoux");
+            BoutonMettreAJour.ToolTip = "Cherche les dernières versions des outils sur leurs dépôts officiels";
+            return;
+        }
+        BoutonMettreAJour.Content = $"Tout _mettre à jour ({enRetard.Count})";
+        BoutonMettreAJour.SetResourceReference(ForegroundProperty, "Signal");
+        BoutonMettreAJour.ToolTip = $"Nouvelle version publiée pour {string.Join(", ", enRetard)}. Un clic les met à jour, empreinte contrôlée.";
     }
 
     // ───────────────────────────── Nouvelle version de l'application ─────────────────────────────
@@ -2623,6 +2903,7 @@ public partial class FenetrePrincipale : Window
                     // Un document ou une archive : pris tel quel, sans passer par yt-dlp.
                     travaux.Add(new Travail(element, "erreur")
                     {
+                        Source = adresse,
                         Direct = travail => FichierDirect.TelechargerAsync(client, adresse, dossier,
                             new Progress<MiseAJourDesOutils.Avancement>(a =>
                             {
@@ -2638,6 +2919,7 @@ public partial class FenetrePrincipale : Window
                 var demande = new Demande(adresse, audioSeul, format, qualite, dossier, PrefixeDeNom: "", QualiteDuSon: _qualiteDuSon, Egaliseur: _egaliseur);
                 travaux.Add(new Travail(element, "erreur", suivi => YtDlp.ArgumentsTelechargement(demande, _complements, suivi))
                 {
+                    Source = adresse,
                     // Une adresse sans vidéo peut porter des images. En mode Audio, elles n'auraient pas de sens.
                     RecoursImages = audioSeul || !GalleryDl.PeutAider(adresse) ? null : () => GalleryDl.Arguments(adresse, dossier),
                 });
@@ -2662,6 +2944,7 @@ public partial class FenetrePrincipale : Window
                     suivi => YtDlp.ArgumentsPourUnMorceau(morceau, formatDuSon, dossier, enListe, _complements, surYoutubeMusic: true, suivi, _qualiteDuSon, _egaliseur),
                     suivi => YtDlp.ArgumentsPourUnMorceau(morceau, formatDuSon, dossier, enListe, _complements, surYoutubeMusic: false, suivi, _qualiteDuSon, _egaliseur))
                 {
+                    Source = adresse,
                     CheminAttendu = YtDlp.CheminAttenduDuMorceau(morceau, formatDuSon, dossier, enListe),
                     TitreAttendu = morceau.Titre,
                 });

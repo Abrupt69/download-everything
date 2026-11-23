@@ -38,6 +38,22 @@ public partial class VueTorrents : UserControl
     /// <summary>Prévient la fenêtre quand le nombre de torrents en cours change, pour l'écrire sur la touche « Torrents ».</summary>
     public event Action<int>? EnCoursChange;
 
+    /// <summary>Prévient la fenêtre qu'un torrent vient de finir, avec son adresse d'origine et ce qu'il a donné, pour l'historique.</summary>
+    public event Action<string, string>? TorrentTermine;
+
+    // L'adresse d'origine de chaque torrent ajouté pendant cette séance, par son numéro chez aria2. La lecture d'un lien
+    // magnet passe son adresse au vrai téléchargement qui la remplace (voir RafraichirAsync).
+    private readonly Dictionary<string, string> _sources = [];
+
+    /// <summary>Pose une adresse dans le champ, sans l'ajouter : c'est le bouton Relancer de l'historique.</summary>
+    public void ProposerUneAdresse(string adresse)
+    {
+        ChampTorrent.Text = adresse;
+        ChampTorrent.Focus();
+        ChampTorrent.SelectAll();
+        Dire("Adresse reprise de l'historique. Ajouter la relance, et reprend là où le torrent s'était arrêté s'il est encore dans le dossier.");
+    }
+
     /// <param name="habillage">La palette et les styles de la fenêtre principale, repris tels quels.</param>
     /// <param name="dossier">Rend le dossier de destination choisi dans la fenêtre, au moment où on le demande.</param>
 #if PORTABLE
@@ -56,6 +72,7 @@ public partial class VueTorrents : UserControl
         Liste.ItemsSource = _torrents;
         Fichiers.ItemsSource = _fichiers;
         Pairs.ItemsSource = _pairs;
+        Mosaique.ItemsSource = _cases;
         _minuterie.Tick += async (_, _) => await RafraichirAsync();
 #if !PORTABLE
         IsVisibleChanged += (_, _) =>
@@ -132,7 +149,8 @@ public partial class VueTorrents : UserControl
             using var client = MiseAJourDesOutils.NouveauClient();
             using var delai = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             var (magnet, fichier) = await Aria2.LireLaSourceAsync(adresse, client, delai.Token);
-            await _service.AjouterAsync(magnet, fichier, dossier);
+            var numero = await _service.AjouterAsync(magnet, fichier, dossier);
+            if (numero.Length > 0) _sources[numero] = adresse;
             Dire($"Ajouté : {nom}. Rien n'est partagé une fois le torrent terminé.");
             _minuterie.Start();
             await RafraichirAsync();
@@ -162,8 +180,14 @@ public partial class VueTorrents : UserControl
             // La lecture d'un lien magnet est un premier « téléchargement » qu'aria2 remplace ensuite par le vrai.
             // Une fois remplacée, elle n'a plus rien à dire : on l'oublie sans la montrer.
             static bool Remplacee(TorrentLu t) => t.Suivi && t.Statut is "complete" or "removed";
+            // Si la lecture remplacée était la ligne choisie, le choix passe au vrai téléchargement au lieu de sauter ailleurs.
+            var choisiAvant = (Liste.SelectedItem as LigneDeTorrent)?.Gid;
+            string? suiteAChoisir = null;
             foreach (var lecture in lus.Where(Remplacee))
             {
+                if (lecture.Gid == choisiAvant && lecture.Suite.Length > 0) suiteAChoisir = lecture.Suite;
+                // L'adresse d'origine passe au vrai téléchargement, pour que l'historique la retrouve à la fin.
+                if (lecture.Suite.Length > 0 && _sources.Remove(lecture.Gid, out var source)) _sources[lecture.Suite] = source;
                 try { await _service.RetirerAsync(lecture.Gid, enCours: false); }
                 catch (InvalidOperationException) { }
             }
@@ -176,16 +200,28 @@ public partial class VueTorrents : UserControl
                 if (ligne is null) _torrents.Add(ligne = new LigneDeTorrent(t.Gid));
                 var avant = ligne.Etat;
                 Remplir(ligne, t);
-                if (avant.Length > 0 && avant != "terminé" && ligne.Etat == "terminé") Dire($"Terminé : {ligne.Nom}");
+                if (avant.Length > 0 && avant != "terminé" && ligne.Etat == "terminé")
+                {
+                    Dire($"Terminé : {ligne.Nom}");
+                    // Ce qu'il a donné : son dossier quand il en a plusieurs fichiers, sinon son fichier unique.
+                    var chemin = t.Fichiers.Count == 1
+                        ? ligne.PremierFichier
+                        : Path.Combine(t.Dossier.Replace('/', Path.DirectorySeparatorChar), ligne.Nom);
+                    TorrentTermine?.Invoke(_sources.GetValueOrDefault(t.Gid, ""), chemin);
+                }
             }
             TexteVide.Visibility = _torrents.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (suiteAChoisir is not null && _torrents.FirstOrDefault(l => l.Gid == suiteAChoisir) is { } suite) Liste.SelectedItem = suite;
             // Le premier torrent ajouté est choisi d'office, pour que le détail ne reste pas vide.
             if (Liste.SelectedItem is null && _torrents.Count > 0) Liste.SelectedIndex = 0;
 
             var actifs = visibles.Count(t => t.Statut == "active");
+            // Ce qu'on a envoyé en tout aux autres, pour tous les torrents de la liste.
+            var envoyeEnTout = visibles.Sum(t => t.Envoye);
+            var partage = envoyeEnTout > 0 ? $"envoyé en tout {FenetrePrincipale.Octets(envoyeEnTout)}     " : "";
             TexteEnsemble.Text = actifs > 0
-                ? $"reçoit {FenetrePrincipale.Octets(visibles.Sum(t => t.Debit))}/s     envoie {FenetrePrincipale.Octets(visibles.Sum(t => t.Envoi))}/s     aria2 {_service.Version}"
-                : _service.Version.Length > 0 ? $"aria2 {_service.Version}" : "";
+                ? $"reçoit {FenetrePrincipale.Octets(visibles.Sum(t => t.Debit))}/s     envoie {FenetrePrincipale.Octets(visibles.Sum(t => t.Envoi))}/s     {partage}aria2 {_service.Version}"
+                : _service.Version.Length > 0 ? $"{partage}aria2 {_service.Version}" : "";
 
             // Ce qui n'est ni fini ni arrêté compte comme « en cours » pour la touche de la fenêtre.
             var enCours = visibles.Count(t => t.Statut is "active" or "waiting" or "paused");
@@ -276,6 +312,7 @@ public partial class VueTorrents : UserControl
             _pairs.Clear();
             TitreFichiers.Text = "FICHIERS";
             TitrePairs.Text = "PAIRS RELIÉS";
+            MontrerLesMorceaux(null);
             return;
         }
 
@@ -287,12 +324,17 @@ public partial class VueTorrents : UserControl
         for (var i = 0; i < fichiers.Count; i++)
         {
             var chemin = fichiers[i].Chemin;
-            // Le chemin est montré à partir du dossier de rangement, le début n'apprend rien.
+            // Le chemin est montré à partir du dossier de rangement, le début n'apprend rien. Le chemin entier vient au survol.
             _fichiers[i].Nom = chemin.StartsWith(racine, StringComparison.OrdinalIgnoreCase) ? chemin[racine.Length..] : chemin;
-            _fichiers[i].Part = fichiers[i].Taille > 0 ? $"{Math.Floor(100 * fichiers[i].Recu / fichiers[i].Taille):0} %" : "—";
+            _fichiers[i].Chemin = chemin.Replace('/', Path.DirectorySeparatorChar);
+            var part = fichiers[i].Taille > 0 ? Math.Clamp(fichiers[i].Recu / fichiers[i].Taille, 0, 1) : 0;
+            _fichiers[i].Pourcent = part * 100;
+            _fichiers[i].Part = fichiers[i].Taille > 0 ? $"{Math.Floor(part * 100):0} %" : "—";
             _fichiers[i].Taille = FenetrePrincipale.Octets(fichiers[i].Taille);
         }
         TitreFichiers.Text = fichiers.Count > 1 ? $"{torrent.Fichiers.Count} FICHIERS" : "FICHIERS";
+
+        MontrerLesMorceaux(torrent);
 
         List<PairLu> pairs = torrent.Statut == "active" && !torrent.EstUneLecture ? await _service.PairsAsync(torrent.Gid) : [];
         pairs = pairs.OrderByDescending(p => p.Recoit).ThenByDescending(p => p.Source).Take(200).ToList();
@@ -301,12 +343,99 @@ public partial class VueTorrents : UserControl
         for (var i = 0; i < pairs.Count; i++)
         {
             _pairs[i].Adresse = pairs[i].Adresse;
+            // Le pays, lu sur le poste dans la table embarquée. L'adresse reste au survol, et prend sa place si le pays est inconnu.
+            _pairs[i].Pays = PaysDesAdresses.Nom(pairs[i].Ip) ?? pairs[i].Adresse;
             _pairs[i].Logiciel = pairs[i].Logiciel;
             _pairs[i].Recoit = pairs[i].Recoit > 0 ? $"{FenetrePrincipale.Octets(pairs[i].Recoit)}/s" : "—";
             _pairs[i].Envoie = pairs[i].Envoie > 0 ? $"{FenetrePrincipale.Octets(pairs[i].Envoie)}/s" : "—";
-            _pairs[i].Role = pairs[i].Source ? "source" : "pair";
+            // Ce que le pair a déjà du torrent, lu dans sa carte de morceaux. Celui qui a tout est une source.
+            _pairs[i].Role = pairs[i].Source ? "source"
+                : torrent.Morceaux > 0 && pairs[i].Carte.Length > 0
+                    ? $"{Math.Floor(100.0 * CarteDeMorceaux.Compter(pairs[i].Carte, torrent.Morceaux) / torrent.Morceaux):0} %"
+                    : "—";
         }
         TitrePairs.Text = pairs.Count > 1 ? $"{pairs.Count} PAIRS RELIÉS" : pairs.Count == 1 ? "1 PAIR RELIÉ" : "PAIRS RELIÉS";
+    }
+
+    // La mosaïque compte toujours le même nombre de cases, quelle que soit la taille du torrent.
+    private const int CasesDeLaMosaique = 120;
+    private readonly ObservableCollection<CaseDeMorceaux> _cases = new(Enumerable.Range(0, CasesDeLaMosaique).Select(_ => new CaseDeMorceaux()));
+
+    /// <summary>
+    /// La mosaïque des morceaux du torrent choisi, et ce qu'on a envoyé aux autres. Un torrent arrive en morceaux,
+    /// dans le désordre, de plusieurs pairs à la fois : la mosaïque montre lesquels sont déjà là.
+    /// </summary>
+    private void MontrerLesMorceaux(TorrentLu? torrent)
+    {
+        var connus = torrent is { EstUneLecture: false, Morceaux: > 0 };
+        // Un torrent fini a tous ses morceaux, même si aria2 ne rend plus sa carte.
+        var parts = !connus ? new double[CasesDeLaMosaique]
+            : torrent!.Statut == "complete" ? Enumerable.Repeat(1.0, CasesDeLaMosaique).ToArray()
+            : CarteDeMorceaux.Regrouper(torrent.Carte, torrent.Morceaux, CasesDeLaMosaique);
+        for (var c = 0; c < CasesDeLaMosaique; c++)
+            _cases[c].Allumage = parts[c] <= 0 ? 0.12 : 0.35 + 0.65 * parts[c];
+
+        if (!connus)
+        {
+            TexteMorceaux.Text = torrent?.EstUneLecture == true ? "lecture du lien magnet, les morceaux ne sont pas encore connus" : "—";
+            TexteEnvoye.Text = "";
+            return;
+        }
+        var recus = torrent!.Statut == "complete" ? torrent.Morceaux : CarteDeMorceaux.Compter(torrent.Carte, torrent.Morceaux);
+        TexteMorceaux.Text = $"{recus:N0} sur {torrent.Morceaux:N0} reçus, de {FenetrePrincipale.Octets(torrent.TailleMorceau)} chacun";
+        // Le rapport entre ce qu'on a envoyé et ce qu'on a reçu, comme le donnent les logiciels de torrent.
+        TexteEnvoye.Text = torrent.Recu > 0
+            ? $"envoyé {FenetrePrincipale.Octets(torrent.Envoye)}, rapport {torrent.Envoye / torrent.Recu:0.00}"
+            : $"envoyé {FenetrePrincipale.Octets(torrent.Envoye)}";
+    }
+
+    /// <summary>Le lien vers DB-IP, que demande la licence de la base des pays. Il s'ouvre dans le navigateur.</summary>
+#if PORTABLE
+    private void OuvrirLeSiteDeDbIp(object? sender, RoutedEventArgs e)
+    {
+        try { Plateforme.Ouvrir("https://db-ip.com"); }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or FileNotFoundException) { Dire($"Impossible d'ouvrir le navigateur. {ex.Message}", erreur: true); }
+    }
+#else
+    private void OuvrirLeSiteDeDbIp(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
+    {
+        e.Handled = true;
+        try { Process.Start(new ProcessStartInfo("https://db-ip.com") { UseShellExecute = true })?.Dispose(); }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException) { Dire($"Impossible d'ouvrir le navigateur. {ex.Message}", erreur: true); }
+    }
+#endif
+
+    /// <summary>Un clic sur un fichier le montre dans son dossier, ou ouvre le dossier s'il n'existe pas encore.</summary>
+    private void MontrerUnFichier(object sender, RoutedEventArgs e)
+    {
+#if PORTABLE
+        if ((sender as Control)?.DataContext is not LigneDeFichier fichier) return;
+#else
+        if ((sender as FrameworkElement)?.DataContext is not LigneDeFichier fichier) return;
+#endif
+        var dossier = Path.GetDirectoryName(fichier.Chemin);
+        try
+        {
+#if PORTABLE
+            if (dossier is { Length: > 0 } && Directory.Exists(dossier)) Plateforme.Ouvrir(dossier);
+#else
+            // Chemin complet de l'Explorateur de Windows, et « /select, » pour montrer le fichier lui-même.
+            var explorateur = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+            var demarrage = new ProcessStartInfo(explorateur) { UseShellExecute = false };
+            if (File.Exists(fichier.Chemin)) demarrage.Arguments = $"/select,\"{fichier.Chemin}\"";
+            else if (dossier is { Length: > 0 } && Directory.Exists(dossier)) demarrage.ArgumentList.Add(dossier);
+            else
+            {
+                Dire("Ce fichier n'a pas encore commencé à arriver, son dossier n'existe pas encore.");
+                return;
+            }
+            Process.Start(demarrage)?.Dispose();
+#endif
+        }
+        catch (Exception ex) when (ex is Win32Exception or InvalidOperationException or FileNotFoundException)
+        {
+            Dire($"Impossible d'ouvrir le dossier. {ex.Message}", erreur: true);
+        }
     }
 
     // ───────────────────────────── Agir sur le torrent choisi ─────────────────────────────
