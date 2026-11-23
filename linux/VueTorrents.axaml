@@ -91,8 +91,10 @@
                                 <TextBlock Grid.Column="1" Text="{Binding Etat}" FontSize="13" Margin="0,0,10,0" VerticalAlignment="Center"
                                            Foreground="{DynamicResource TexteDoux}" TextTrimming="CharacterEllipsis"/>
                                 <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                    <!-- MinWidth posé ici même : le thème d'Avalonia impose 200 de large à une barre horizontale, et sa règle
+                                         passe avant un style ordinaire. Sans cela la barre déborde de sa colonne (vu le 23/11/2026). -->
                                     <ProgressBar Classes="fine" Classes.fini="{Binding Fini}" Classes.echec="{Binding EnEchec}" Classes.pause="{Binding EnPause}"
-                                                 Minimum="0" Maximum="100" Value="{Binding Pourcent}" IsIndeterminate="{Binding SansMouvement}"/>
+                                                 MinWidth="0" Minimum="0" Maximum="100" Value="{Binding Pourcent}" IsIndeterminate="{Binding SansMouvement}"/>
                                     <TextBlock Text="{Binding Recu}" Margin="0,4,0,0" FontSize="11.5" FontFeatures="tnum"
                                                Foreground="{DynamicResource TexteEtiquette}"/>
                                 </StackPanel>
@@ -160,7 +162,7 @@
                                             <Button Classes="lienDeFichier" Margin="0,0,10,0" Click="MontrerUnFichier" ToolTip.Tip="{Binding Chemin}">
                                                 <TextBlock Text="{Binding Nom}" FontSize="13" TextTrimming="CharacterEllipsis"/>
                                             </Button>
-                                            <ProgressBar Grid.Column="1" Classes="fine" Margin="0,0,8,0" Minimum="0" Maximum="100" Value="{Binding Pourcent}"
+                                            <ProgressBar Grid.Column="1" Classes="fine" Margin="0,0,8,0" MinWidth="0" Minimum="0" Maximum="100" Value="{Binding Pourcent}"
                                                          VerticalAlignment="Center"/>
                                             <TextBlock Grid.Column="2" Classes="chiffre" Text="{Binding Part}" FontSize="12.5"/>
                                             <TextBlock Grid.Column="3" Classes="chiffre" Text="{Binding Taille}" FontSize="12.5" Foreground="{DynamicResource TexteDoux}"/>

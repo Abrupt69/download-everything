@@ -406,7 +406,7 @@
                                                                    Foreground="{DynamicResource TexteEtiquette}" VerticalAlignment="Center"/>
                                                         <TextBlock Grid.Column="1" Text="{Binding Titre}" Margin="0,0,16,0" VerticalAlignment="Center"
                                                                    TextTrimming="CharacterEllipsis"/>
-                                                        <ProgressBar Grid.Column="2" Classes="fine" Classes.fini="{Binding Fini}" Classes.echec="{Binding EnEchec}"
+                                                        <ProgressBar Grid.Column="2" Classes="fine" MinWidth="0" Classes.fini="{Binding Fini}" Classes.echec="{Binding EnEchec}"
                                                                      Minimum="0" Maximum="100" Value="{Binding Pourcent}" VerticalAlignment="Center"/>
                                                         <TextBlock Grid.Column="3" Text="{Binding Etat}" Margin="16,0,0,0" FontSize="12.5" FontFeatures="tnum"
                                                                    Foreground="{DynamicResource TexteDoux}" VerticalAlignment="Center"/>
